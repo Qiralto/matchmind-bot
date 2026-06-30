@@ -554,6 +554,40 @@ async def on_reveal_decline(interaction: discord.Interaction, match_id: int, sid
     )
  
  
+ 
+# --------------------------------------------------------------------------
+# COMMANDE DE TEST (ADMIN UNIQUEMENT)
+# --------------------------------------------------------------------------
+ 
+@bot.tree.command(name="test-match", description="[ADMIN] Forcer un match entre deux membres pour tester")
+@app_commands.describe(membre="Le membre avec qui créer un match de test")
+async def test_match(interaction: discord.Interaction, membre: discord.Member):
+    guild = interaction.guild
+    fondateur = discord.utils.get(guild.roles, name="👑 Fondateur")
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message(
+            "Tu n'as pas la permission d'utiliser cette commande.", ephemeral=True
+        )
+        return
+ 
+    if membre.id == interaction.user.id:
+        await interaction.response.send_message(
+            "Tu ne peux pas te matcher avec toi-même.", ephemeral=True
+        )
+        return
+ 
+    await interaction.response.send_message(
+        f"Création d'un match de test entre toi et {membre.display_name}...", ephemeral=True
+    )
+ 
+    await db.add_like(interaction.user.id, membre.id)
+    await db.add_like(membre.id, interaction.user.id)
+    await create_match_channels(interaction.user.id, membre.id)
+ 
+    await interaction.followup.send(
+        f"Match de test créé ! Vérifie la catégorie 💌 Matchs.", ephemeral=True
+    )
+ 
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
