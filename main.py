@@ -422,16 +422,13 @@ async def create_match_channels(user1_id: int, user2_id: int):
     member2 = guild.get_member(user2_id)
  
     # Permissions strictes : seuls les deux membres et le bot ont accès
-    # Personne d'autre (ni modérateurs ni fondateur) ne peut voir ces salons
+    # @everyone est bloqué, donc tous les rôles héritent de ce blocage
     overwrites1 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_webhooks=True),
     }
     if member1:
         overwrites1[member1] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-    for role in guild.roles:
-        if role != guild.default_role and role not in (guild.me.top_role,):
-            overwrites1[role] = discord.PermissionOverwrite(view_channel=False)
  
     overwrites2 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -439,9 +436,6 @@ async def create_match_channels(user1_id: int, user2_id: int):
     }
     if member2:
         overwrites2[member2] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
-    for role in guild.roles:
-        if role != guild.default_role and role not in (guild.me.top_role,):
-            overwrites2[role] = discord.PermissionOverwrite(view_channel=False)
  
     channel1 = await guild.create_text_channel(
         f"match-{match_id}-a", category=category, overwrites=overwrites1
