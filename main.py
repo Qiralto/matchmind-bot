@@ -338,9 +338,12 @@ async def on_ready():
     await db.init_db()
     try:
         if GUILD_ID:
-            await bot.tree.sync(guild=discord.Object(id=GUILD_ID))
+            guild_obj = discord.Object(id=GUILD_ID)
+            bot.tree.copy_global_to(guild=guild_obj)
+            synced = await bot.tree.sync(guild=guild_obj)
         else:
-            await bot.tree.sync()
+            synced = await bot.tree.sync()
+        print(f"{len(synced)} commande(s) synchronisée(s) : {[c.name for c in synced]}")
     except Exception as e:
         print(f"Erreur de synchronisation des commandes : {e}")
 
