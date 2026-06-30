@@ -52,7 +52,10 @@ async def on_member_join(member: discord.Member):
  
  
 async def assign_membre_verifie(user_id: int, guild: discord.Guild):
-    member = guild.get_member(user_id)
+    try:
+        member = await guild.fetch_member(user_id)
+    except discord.NotFound:
+        member = None
     if not member:
         return
     role_nouveau = discord.utils.get(guild.roles, name=ROLE_NOUVEAU)
