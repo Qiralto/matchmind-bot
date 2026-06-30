@@ -2,7 +2,7 @@
 import os
 import asyncio
 import discord
-from discord import app_commands
+from discord import app_commands, ui
 from discord.ext import commands, tasks
  
 import constants
@@ -15,6 +15,8 @@ GUILD_ID = int(os.environ.get("GUILD_ID", "0")) or None
 MATCH_CATEGORY_NAME = "💌 Matchs"
 ROLE_NOUVEAU = "👤 Nouveau"
 ROLE_MEMBRE = "❤️ Membre vérifié"
+SALON_SIGNALEMENTS = "🚨signalements"
+SALON_SIGNALER = "🚨signaler"
  
 intents = discord.Intents.default()
 intents.members = True
@@ -36,7 +38,6 @@ async def on_member_join(member: discord.Member):
             await member.add_roles(role_nouveau)
         except discord.Forbidden:
             pass
- 
     try:
         await member.send(
             f"Bienvenue sur **MatchMind**, {member.display_name} ! 💘\n\n"
@@ -63,6 +64,131 @@ async def assign_membre_verifie(user_id: int, guild: discord.Guild):
             await member.add_roles(role_membre)
     except discord.Forbidden:
         pass
+ 
+ 
+# --------------------------------------------------------------------------
+# SIGNALEMENT
+# --------------------------------------------------------------------------
+ 
+MOTIFS_SIGNALEMENT = [
+    "Harcèlement / comportement inapproprié",
+    "Contenu interdit (photo non sollicitée, contenu sexuel...)",
+    "Suspicion de mineur",
+    "Faux profil / arnaque",
+    "Autre",
+]
+ 
+ 
+class SignalementModal(ui.Modal, title="Signalement"):
+    motif = ui.TextInput(
+        label="Motif du signalement",
+        placeholder="Harcèlement, contenu inapproprié, faux profil...",
+        max_length=100,
+    )
+    description = ui.TextInput(
+        label="Décris le problème",
+        style=discord.TextStyle.paragraph,
+        placeholder="Décris précisément ce qui s'est passé...",
+        max_length=500,
+    )
+    personne = ui.TextInput(
+        label="Pseudo ou ID de la personne concernée",
+        placeholder="Ex: Pseudo#1234 ou laisse vide si inconnu",
+        required=False,
+        max_length=100,
+    )
+ 
+    async def on_submit(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        salon = discord.utils.get(guild.text_channels, name=SALON_SIGNALEMENTS)
+ 
+        if salon is None:
+            await interaction.response.send_message(
+                "Ton signalement a bien été reçu, un modérateur va s'en occuper.",
+                ephemeral=True,
+            )
+            return
+ 
+        embed = discord.Embed(
+            title="🚨 Nouveau signalement",
+            color=0xFF0000,
+        )
+        embed.add_field(name="Motif", value=self.motif.value, inline=False)
+        embed.add_field(name="Description", value=self.description.value, inline=False)
+        if self.personne.value:
+            embed.add_field(name="Personne concernée", value=self.personne.value, inline=True)
+        embed.add_field(
+            name="Salon",
+            value=interaction.channel.mention if interaction.channel else "Inconnu",
+            inline=True,
+        )
+        embed.set_footer(text=f"Signalement anonyme — reçu le {discord.utils.utcnow().strftime('%d/%m/%Y à %H:%M')}")
+ 
+        await salon.send(embed=embed)
+        await interaction.response.send_message(
+            "Ton signalement a bien été transmis aux modérateurs de façon anonyme. "
+            "Merci de contribuer à la sécurité de MatchMind. 🛡️",
+            ephemeral=True,
+        )
+ 
+ 
+@bot.tree.command(name="signaler", description="Signaler un problème ou un comportement inapproprié")
+async def signaler(interaction: discord.Interaction):
+    await interaction.response.send_modal(SignalementModal())
+ 
+ 
+async def post_signalement_button(guild: discord.Guild):
+    """Poste le message permanent avec le bouton Signaler dans #🚨signaler."""
+    salon = discord.utils.get(guild.text_channels, name=SALON_SIGNALER)
+    if salon is None:
+        return
+ 
+    async for message in salon.history(limit=10):
+        if message.author == guild.me:
+            return
+ 
+    class SignalerView(ui.View):
+        def __init__(self):
+            super().__init__(timeout=None)
+ 
+        @ui.button(label="🚨 Signaler un problème", style=discord.ButtonStyle.danger, custom_id="btn_signaler")
+        async def signaler_btn(self, interaction: discord.Interaction, button: ui.Button):
+            await interaction.response.send_modal(SignalementModal())
+ 
+    embed = discord.Embed(
+        title="🛡️ Signaler un problème",
+        description=(
+            "Tu as été témoin ou victime d'un comportement inapproprié ?\n\n"
+            "Clique sur le bouton ci-dessous pour envoyer un signalement **anonyme** "
+            "directement aux modérateurs.\n\n"
+            "Exemples : harcèlement, contenu interdit, faux profil, suspicion de mineur..."
+        ),
+        color=0xFF6B6B,
+    )
+    embed.set_footer(text="Ton signalement restera anonyme et confidentiel.")
+    await salon.send(embed=embed, view=SignalerView())
+ 
+ 
+class SignalerPersistentView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+ 
+    @ui.button(label="🚨 Signaler un problème", style=discord.ButtonStyle.danger, custom_id="btn_signaler")
+    async def signaler_btn(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(SignalementModal())
+ 
+ 
+# --------------------------------------------------------------------------
+# BOUTON SIGNALEMENT DANS LES SALONS DE MATCH
+# --------------------------------------------------------------------------
+ 
+class MatchSignalerView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+ 
+    @ui.button(label="🚨 Signaler ce match", style=discord.ButtonStyle.danger, custom_id="btn_match_signaler")
+    async def signaler_match(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(SignalementModal())
  
  
 # --------------------------------------------------------------------------
@@ -282,10 +408,10 @@ async def create_match_channels(user1_id: int, user2_id: int):
         "Vous pouvez maintenant discuter ici de façon anonyme : votre pseudo Discord "
         "n'est pas visible par l'autre personne. Après quelques échanges, vous pourrez "
         "choisir ensemble de révéler vos profils si vous le souhaitez.\n\n"
-        "Merci de rester respectueux·se. En cas de souci, contactez un modérateur."
+        "Merci de rester respectueux·se. En cas de souci, utilise le bouton ci-dessous."
     )
-    await channel1.send(intro)
-    await channel2.send(intro)
+    await channel1.send(intro, view=MatchSignalerView())
+    await channel2.send(intro, view=MatchSignalerView())
  
     if member1:
         embed = views.build_profile_embed(await db.get_profile(user2_id))
@@ -383,6 +509,8 @@ async def on_reveal_decline(interaction: discord.Interaction, match_id: int, sid
 @bot.event
 async def on_ready():
     await db.init_db()
+    bot.add_view(SignalerPersistentView())
+    bot.add_view(MatchSignalerView())
     try:
         if GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
@@ -396,6 +524,10 @@ async def on_ready():
  
     if not send_daily_suggestions.is_running():
         send_daily_suggestions.start()
+ 
+    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+    if guild:
+        await post_signalement_button(guild)
  
     print(f"Connecté en tant que {bot.user}")
  
