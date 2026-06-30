@@ -128,6 +128,47 @@ class SignalementModal(ui.Modal, title="Signalement"):
         embed.set_footer(text=f"Signalement anonyme — reçu le {discord.utils.utcnow().strftime('%d/%m/%Y à %H:%M')}")
  
         await salon.send(embed=embed)
+ 
+        # Si le signalement vient d'un salon de match, copier le transcript
+        if interaction.channel:
+            match = await db.get_match_by_channel(interaction.channel.id)
+            if match:
+                # Récupérer les vrais pseudos pour la modération
+                try:
+                    user1 = await bot.fetch_user(match["user1_id"])
+                    user2 = await bot.fetch_user(match["user2_id"])
+                    label1 = f"{user1.name} (ID:{user1.id})"
+                    label2 = f"{user2.name} (ID:{user2.id})"
+                except Exception:
+                    label1 = f"User ID:{match['user1_id']}"
+                    label2 = f"User ID:{match['user2_id']}"
+ 
+                messages = []
+                async for msg in interaction.channel.history(limit=50, oldest_first=True):
+                    if not msg.author.bot:
+                        label = label1 if interaction.channel.id == match["channel1_id"] else label2
+                        messages.append(f"[{msg.created_at.strftime('%H:%M')}] {label} : {msg.content}")
+                    else:
+                        if msg.content and not msg.content.startswith("🎉") and "Signaler" not in msg.content:
+                            messages.append(f"[{msg.created_at.strftime('%H:%M')}] [Relayé] : {msg.content}")
+ 
+                if messages:
+                    transcript = "\n".join(messages)
+                    if len(transcript) > 3900:
+                        transcript = transcript[-3900:] + "\n[... messages précédents tronqués]"
+                    transcript_embed = discord.Embed(
+                        title="📋 Transcript de la conversation",
+                        description=f"```{transcript}```",
+                        color=0xFF6B6B,
+                    )
+                    transcript_embed.add_field(
+                        name="Identités (modération uniquement)",
+                        value=f"Salon A : {label1}\nSalon B : {label2}",
+                        inline=False
+                    )
+                    transcript_embed.set_footer(text="⚠️ Confidentiel — usage modération uniquement")
+                    await salon.send(embed=transcript_embed)
+ 
         await interaction.response.send_message(
             "Ton signalement a bien été transmis aux modérateurs de façon anonyme. "
             "Merci de contribuer à la sécurité de MatchMind. 🛡️",
@@ -380,19 +421,27 @@ async def create_match_channels(user1_id: int, user2_id: int):
     member1 = guild.get_member(user1_id)
     member2 = guild.get_member(user2_id)
  
+    # Permissions strictes : seuls les deux membres et le bot ont accès
+    # Personne d'autre (ni modérateurs ni fondateur) ne peut voir ces salons
     overwrites1 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        guild.me: discord.PermissionOverwrite(view_channel=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_webhooks=True),
     }
     if member1:
         overwrites1[member1] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    for role in guild.roles:
+        if role != guild.default_role and role not in (guild.me.top_role,):
+            overwrites1[role] = discord.PermissionOverwrite(view_channel=False)
  
     overwrites2 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        guild.me: discord.PermissionOverwrite(view_channel=True),
+        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_webhooks=True),
     }
     if member2:
         overwrites2[member2] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+    for role in guild.roles:
+        if role != guild.default_role and role not in (guild.me.top_role,):
+            overwrites2[role] = discord.PermissionOverwrite(view_channel=False)
  
     channel1 = await guild.create_text_channel(
         f"match-{match_id}-a", category=category, overwrites=overwrites1
