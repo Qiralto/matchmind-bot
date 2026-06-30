@@ -52,21 +52,29 @@ async def on_member_join(member: discord.Member):
  
  
 async def assign_membre_verifie(user_id: int, guild: discord.Guild):
+    print(f"DEBUG assign start: user_id={user_id}")
     try:
         member = await guild.fetch_member(user_id)
+        print(f"DEBUG membre trouve: {member}")
     except discord.NotFound:
+        print(f"DEBUG membre introuvable pour user_id={user_id}")
         member = None
     if not member:
         return
     role_nouveau = discord.utils.get(guild.roles, name=ROLE_NOUVEAU)
     role_membre = discord.utils.get(guild.roles, name=ROLE_MEMBRE)
+    print(f"DEBUG roles: nouveau={role_nouveau}, membre={role_membre}")
     try:
         if role_nouveau and role_nouveau in member.roles:
             await member.remove_roles(role_nouveau)
+            print("DEBUG: role Nouveau retire")
         if role_membre and role_membre not in member.roles:
             await member.add_roles(role_membre)
-    except discord.Forbidden:
-        pass
+            print("DEBUG: role Membre verifie ajoute")
+    except discord.Forbidden as e:
+        print(f"DEBUG Forbidden: {e}")
+    except Exception as e:
+        print(f"DEBUG erreur inattendue: {e}")
  
  
 # --------------------------------------------------------------------------
