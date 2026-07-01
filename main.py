@@ -2300,6 +2300,34 @@ async def rappel_bump():
 async def before_rappel_bump():
     await bot.wait_until_ready()
 
+
+@bot.tree.command(name="test-suggestion", description="[ADMIN] Envoyer une suggestion de test en DM à un membre")
+@app_commands.describe(membre="Le membre qui recevra la suggestion", profil_de="Le membre dont le profil sera envoyé")
+async def test_suggestion(interaction: discord.Interaction, membre: discord.Member, profil_de: discord.Member):
+    fondateur = discord.utils.get(interaction.guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+
+    profile = await db.get_profile(profil_de.id)
+    if not profile:
+        await interaction.response.send_message(
+            f"{profil_de.display_name} n'a pas de profil.", ephemeral=True
+        )
+        return
+
+    try:
+        embed = views.build_profile_embed(profile)
+        view = views.LikePassView(membre.id, profil_de.id, on_like, on_pass)
+        await membre.send(embed=embed, view=view)
+        await interaction.response.send_message(
+            f"✅ Suggestion envoyée en DM à {membre.display_name} !", ephemeral=True
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            f"Impossible d'envoyer un DM à {membre.display_name}.", ephemeral=True
+        )
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
