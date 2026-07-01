@@ -1986,6 +1986,83 @@ async def retirer_avertissement(interaction: discord.Interaction, membre: discor
         ephemeral=True
     )
 
+
+# --------------------------------------------------------------------------
+# DATE VOCALE
+# --------------------------------------------------------------------------
+
+@bot.tree.command(name="date-vocale", description="Créer un salon vocal privé avec ton match")
+async def date_vocale(interaction: discord.Interaction):
+    guild = interaction.guild
+    
+    # Vérifier que la commande est tapée dans un salon de match
+    match = await db.get_match_by_channel(interaction.channel.id)
+    if not match:
+        await interaction.response.send_message(
+            "Cette commande ne peut être utilisée que dans un salon de match.",
+            ephemeral=True
+        )
+        return
+
+    # Récupérer les deux membres
+    member1 = guild.get_member(match["user1_id"])
+    member2 = guild.get_member(match["user2_id"])
+
+    # Créer le salon vocal privé
+    category = discord.utils.get(guild.categories, name=MATCH_CATEGORY_NAME)
+    
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(view_channel=False),
+        guild.me: discord.PermissionOverwrite(view_channel=True, connect=True),
+    }
+    if member1:
+        overwrites[member1] = discord.PermissionOverwrite(view_channel=True, connect=True, speak=True)
+    if member2:
+        overwrites[member2] = discord.PermissionOverwrite(view_channel=True, connect=True, speak=True)
+
+    # Bloquer l'owner
+    OWNER_ID = 364449220461199370
+    owner = guild.get_member(OWNER_ID)
+    if owner:
+        overwrites[owner] = discord.PermissionOverwrite(view_channel=False)
+
+    vocal = await guild.create_voice_channel(
+        f"🎙️date-{match['match_id']}",
+        category=category,
+        overwrites=overwrites
+    )
+
+    await interaction.response.send_message(
+        f"🎙️ Salon vocal créé ! Rejoignez-le pour votre date 💘\n"
+        f"Il sera supprimé automatiquement quand vous aurez tous les deux quitté.",
+        ephemeral=False
+    )
+
+    # Surveiller le salon vocal pour le supprimer quand vide
+    await asyncio.sleep(5)
+    bot.loop.create_task(supprimer_vocal_quand_vide(vocal))
+
+
+async def supprimer_vocal_quand_vide(channel: discord.VoiceChannel):
+    """Supprime le salon vocal quand il est vide après avoir été utilisé."""
+    await asyncio.sleep(30)  # Attendre 30 secondes avant de vérifier
+    
+    while True:
+        await asyncio.sleep(10)
+        try:
+            channel = channel.guild.get_channel(channel.id)
+            if channel is None:
+                break
+            if len(channel.members) == 0:
+                await asyncio.sleep(60)  # Attendre 1 minute de plus pour confirmer
+                channel = channel.guild.get_channel(channel.id)
+                if channel and len(channel.members) == 0:
+                    await channel.delete()
+                    break
+        except Exception as e:
+            print(f"Erreur suppression vocal : {e}")
+            break
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
