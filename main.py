@@ -599,6 +599,22 @@ async def on_reveal_accept(interaction: discord.Interaction, match_id: int, side
         if channel2:
             await channel2.send(f"Vous êtes tous les deux d'accord ! Voici qui tu parlais : {user1_mention}")
 
+        # Annonce anonyme dans #temoignages
+        salon_temoignages = discord.utils.get(guild.text_channels, name="temoignages")
+        if not salon_temoignages:
+            for ch in guild.text_channels:
+                if "temoignage" in ch.name.lower():
+                    salon_temoignages = ch
+                    break
+        if salon_temoignages:
+            msg = (
+                "\U0001f498 Un nouveau match vient d'etre revele sur MatchMind...\n"
+                "Qui sait ce que l'avenir leur reserve ? \U0001f31f"
+            )
+            embed = discord.Embed(description=msg, color=0xE91E8C)
+            embed.set_footer(text="Inscris-toi et trouve ta moitié 💌")
+            await salon_temoignages.send(embed=embed)
+
 
 async def on_reveal_decline(interaction: discord.Interaction, match_id: int, side: int):
     await interaction.response.send_message(
