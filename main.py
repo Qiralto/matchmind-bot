@@ -620,12 +620,12 @@ async def on_reveal_accept(interaction: discord.Interaction, match_id: int, side
             await channel2.send(f"Vous êtes tous les deux d'accord ! Voici qui tu parlais : {user1_mention}")
 
         # Annonce anonyme dans #temoignages
-        salon_temoignages = discord.utils.get(guild.text_channels, name="temoignages")
-        if not salon_temoignages:
-            for ch in guild.text_channels:
-                if "temoignage" in ch.name.lower():
-                    salon_temoignages = ch
-                    break
+        salon_temoignages = None
+        for ch in guild.text_channels:
+            name = ch.name.lower().replace("é", "e").replace("è", "e").replace("ê", "e")
+            if "temoignage" in name:
+                salon_temoignages = ch
+                break
         if salon_temoignages:
             msg = (
                 "\U0001f498 Un nouveau match vient d'etre revele sur MatchMind...\n"
@@ -774,7 +774,8 @@ class TemoignageModal(ui.Modal, title="Partager mon témoignage"):
 
         salon = None
         for ch in guild.text_channels:
-            if "temoignage" in ch.name.lower():
+            name = ch.name.lower().replace("é", "e").replace("è", "e").replace("ê", "e")
+            if "temoignage" in name:
                 salon = ch
                 break
 
@@ -817,7 +818,8 @@ async def post_temoignage_button(guild: discord.Guild):
     """Poste le message avec le bouton dans #témoignages au démarrage."""
     salon = None
     for ch in guild.text_channels:
-        if "temoignage" in ch.name.lower():
+        name = ch.name.lower().replace("é", "e").replace("è", "e").replace("ê", "e")
+        if "temoignage" in name:
             salon = ch
             break
     if not salon:
