@@ -591,21 +591,55 @@ async def propose_reveal(match: dict):
     channel1 = guild.get_channel(match["channel1_id"])
     channel2 = guild.get_channel(match["channel2_id"])
 
+    # Bloquer l'envoi de messages pendant la décision
+    for channel in [channel1, channel2]:
+        if channel:
+            for target, overwrite in channel.overwrites.items():
+                if isinstance(target, discord.Member):
+                    overwrite.send_messages = False
+                    await channel.set_permissions(target, overwrite=overwrite)
+
     if channel1 and not match["reveal_agree1"]:
         await channel1.send(
-            "Vous semblez bien vous entendre ! Voulez-vous révéler vos pseudos Discord ?",
+            "🔓 Vous semblez bien vous entendre ! Voulez-vous révéler vos pseudos Discord ?\n"
+            "⚠️ Les messages sont temporairement désactivés le temps de votre choix.",
             view=views.RevealConfirmView(match["match_id"], 1, on_reveal_accept, on_reveal_decline),
         )
     if channel2 and not match["reveal_agree2"]:
         await channel2.send(
-            "Vous semblez bien vous entendre ! Voulez-vous révéler vos pseudos Discord ?",
+            "🔓 Vous semblez bien vous entendre ! Voulez-vous révéler vos pseudos Discord ?\n"
+            "⚠️ Les messages sont temporairement désactivés le temps de votre choix.",
             view=views.RevealConfirmView(match["match_id"], 2, on_reveal_accept, on_reveal_decline),
         )
+
+
+
+async def restore_send_messages(channel, user_id):
+    """Réactive l'envoi de messages pour un membre dans un salon."""
+    member = channel.guild.get_member(user_id)
+    if member:
+        overwrite = channel.overwrites_for(member)
+        overwrite.send_messages = True
+        await channel.set_permissions(member, overwrite=overwrite)
+
+
+async def delete_reveal_message(channel):
+    """Supprime le message de proposition de révélation."""
+    async for msg in channel.history(limit=10):
+        if msg.author == channel.guild.me and "lez-vous" in (msg.content or ""):
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+            break
 
 
 async def on_reveal_accept(interaction: discord.Interaction, match_id: int, side: int):
     await db.set_reveal_agree(match_id, side)
     await interaction.response.send_message("D'accord, en attente de l'autre personne...", ephemeral=True)
+
+    # Supprimer le message de proposition
+    await delete_reveal_message(interaction.channel)
 
     match = await db.get_match_by_channel(interaction.channel.id)
     if match["reveal_agree1"] and match["reveal_agree2"]:
@@ -616,8 +650,10 @@ async def on_reveal_accept(interaction: discord.Interaction, match_id: int, side
         user1_mention = f"<@{match['user1_id']}>"
         user2_mention = f"<@{match['user2_id']}>"
         if channel1:
+            await restore_send_messages(channel1, match["user1_id"])
             await channel1.send(f"Vous êtes tous les deux d'accord ! Voici qui tu parlais : {user2_mention}")
         if channel2:
+            await restore_send_messages(channel2, match["user2_id"])
             await channel2.send(f"Vous êtes tous les deux d'accord ! Voici qui tu parlais : {user1_mention}")
 
         # Annonce anonyme dans #temoignages
@@ -641,6 +677,13 @@ async def on_reveal_decline(interaction: discord.Interaction, match_id: int, sid
     await interaction.response.send_message(
         "Pas de souci, vous restez anonymes pour l'instant.", ephemeral=True
     )
+    # Supprimer le message et réactiver les messages
+    await delete_reveal_message(interaction.channel)
+    match = await db.get_match_by_channel(interaction.channel.id)
+    if match:
+        guild = interaction.guild
+        user_id = match["user1_id"] if interaction.channel.id == match["channel1_id"] else match["user2_id"]
+        await restore_send_messages(interaction.channel, user_id)
 
 
 
