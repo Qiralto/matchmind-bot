@@ -870,12 +870,12 @@ class SuggestionModal(ui.Modal, title="Faire une suggestion"):
             )
             return
 
-        salon_recues = discord.utils.get(guild.text_channels, name="suggestions-reçues")
-        if not salon_recues:
-            for ch in guild.text_channels:
-                if "suggestion" in ch.name.lower() and "re" in ch.name.lower():
-                    salon_recues = ch
-                    break
+        salon_recues = None
+        for ch in guild.text_channels:
+            name = ch.name.lower().replace("é", "e").replace("è", "e").replace("ê", "e").replace("ç", "c")
+            if "suggestion" in name and ("recu" in name or "recue" in name):
+                salon_recues = ch
+                break
 
         if not salon_recues:
             await interaction.response.send_message(
