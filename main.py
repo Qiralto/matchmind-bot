@@ -18,6 +18,7 @@ ROLE_MEMBRE = "❤️ Membre vérifié"
 SALON_SIGNALEMENTS = "🚨signalements"
 SALON_SIGNALER = "🚨signaler"
 ROLE_FONDATEUR = "👑 Fondateur"
+ROLE_SUSPENDU = "🚫 Suspendu"
 
 intents = discord.Intents.default()
 intents.members = True
@@ -1340,6 +1341,89 @@ async def test_jeu(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"Erreur : {e}", ephemeral=True)
 
+
+# --------------------------------------------------------------------------
+# MESSAGES AUTOMATIQUES MATIN/SOIR
+# --------------------------------------------------------------------------
+
+@tasks.loop(minutes=1)
+async def messages_ambiance():
+    """Envoie un message de bonjour à 8h et bonne nuit à 22h."""
+    from datetime import datetime, timezone, timedelta
+    paris = timezone(timedelta(hours=2))
+    now = datetime.now(paris)
+    
+    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+    if not guild:
+        return
+    
+    salon = discord.utils.get(guild.text_channels, name="💬discussions")
+    if not salon:
+        for ch in guild.text_channels:
+            if "discussion" in ch.name.lower():
+                salon = ch
+                break
+    if not salon:
+        return
+
+    if now.hour == 8 and now.minute == 0:
+        embed = discord.Embed(
+            description="☀️ **Bonjour MatchMind !**\nUne nouvelle journée commence, de nouvelles rencontres t'attendent ! 💘",
+            color=0xF1C40F
+        )
+        await salon.send(embed=embed)
+
+    elif now.hour == 22 and now.minute == 0:
+        embed = discord.Embed(
+            description="🌙 **Bonne nuit MatchMind !**\nQui sait ce que demain te réserve... 💌",
+            color=0x9B59B6
+        )
+        await salon.send(embed=embed)
+
+
+@messages_ambiance.before_loop
+async def before_messages_ambiance():
+    await bot.wait_until_ready()
+
+
+@bot.tree.command(name="bannir-profil", description="[ADMIN] Bannir quelqu'un du système de matching sans le kick")
+@app_commands.describe(membre="Le membre à bannir du matching")
+async def bannir_profil(interaction: discord.Interaction, membre: discord.Member):
+    fondateur = discord.utils.get(interaction.guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+
+    await db.delete_profile(membre.id)
+
+    role_membre = discord.utils.get(interaction.guild.roles, name=ROLE_MEMBRE)
+    role_nouveau = discord.utils.get(interaction.guild.roles, name=ROLE_NOUVEAU)
+    role_suspendu = discord.utils.get(interaction.guild.roles, name=ROLE_SUSPENDU)
+    try:
+        if role_membre and role_membre in membre.roles:
+            await membre.remove_roles(role_membre)
+        if role_nouveau and role_nouveau in membre.roles:
+            await membre.remove_roles(role_nouveau)
+        if role_suspendu and role_suspendu not in membre.roles:
+            await membre.add_roles(role_suspendu)
+    except discord.Forbidden:
+        pass
+
+    try:
+        await membre.send(
+            "Ton profil sur MatchMind a été suspendu par la modération suite à un signalement. "
+            "Tu restes membre du serveur mais tu n'as plus accès au système de matching. "
+            "Contacte un modérateur si tu penses que c'est une erreur."
+        )
+    except discord.Forbidden:
+        pass
+
+    await interaction.response.send_message(
+        f"Le profil de {membre.display_name} a été supprimé du système de matching. "
+        f"Il reste membre du serveur mais ne peut plus matcher.",
+        ephemeral=True
+    )
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
@@ -1373,6 +1457,8 @@ async def on_ready():
         envoyer_sondage.start()
     if not envoyer_jeu.is_running():
         envoyer_jeu.start()
+    if not messages_ambiance.is_running():
+        messages_ambiance.start()
 
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
