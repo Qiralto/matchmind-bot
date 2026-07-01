@@ -1699,6 +1699,79 @@ async def verifier_premium_whop():
 async def before_verifier_premium_whop():
     await bot.wait_until_ready()
 
+
+@bot.tree.command(name="voir-qui-ma-like", description="[PREMIUM] Voir les profils qui t'ont liké")
+async def voir_qui_ma_like(interaction: discord.Interaction):
+    guild = interaction.guild
+    role_premium = discord.utils.get(guild.roles, name=ROLE_PREMIUM)
+    if not role_premium or role_premium not in interaction.user.roles:
+        await interaction.response.send_message(
+            "Cette commande est réservée aux membres **💎Premium** !\n"
+            "Abonne-toi sur https://whop.com/matchmind-8b4e/matchmind-premium/ pour y accéder.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    conn = None
+    try:
+        import asyncpg
+        conn = await asyncpg.connect(os.environ.get("DATABASE_URL"))
+        rows = await conn.fetch(
+            "SELECT liker_id FROM likes WHERE liked_id = $1",
+            interaction.user.id
+        )
+    finally:
+        if conn:
+            await conn.close()
+
+    if not rows:
+        await interaction.followup.send(
+            "Personne n'a encore liké ton profil pour l'instant. "
+            "Sois patient(e), ça va venir ! 💘",
+            ephemeral=True
+        )
+        return
+
+    profiles = []
+    for row in rows:
+        profile = await db.get_profile(row["liker_id"])
+        if profile:
+            profiles.append(profile)
+
+    if not profiles:
+        await interaction.followup.send(
+            "Personne n'a encore liké ton profil pour l'instant. 💘",
+            ephemeral=True
+        )
+        return
+
+    embed = discord.Embed(
+        title=f"💘 {len(profiles)} personne(s) ont liké ton profil !",
+        description="Voici leurs profils anonymes. Like-les en retour pour créer un match ! 🎉",
+        color=0xE91E8C
+    )
+
+    for i, profile in enumerate(profiles[:5], 1):
+        interests = ", ".join(profile["interests"][:4]) if profile["interests"] else "Non précisé"
+        embed.add_field(
+            name=f"Profil {i} — {profile['prenom']}, {profile['age']} ans",
+            value=(
+                f"📍 {profile['localisation']}\n"
+                f"💭 {profile['relation_type']}\n"
+                f"🎯 {interests}"
+            ),
+            inline=False
+        )
+
+    if len(profiles) > 5:
+        embed.set_footer(text=f"Et {len(profiles) - 5} autre(s) profil(s)... Like tes suggestions pour les découvrir !")
+    else:
+        embed.set_footer(text="Like tes suggestions quotidiennes pour créer des matchs ! 💌")
+
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
