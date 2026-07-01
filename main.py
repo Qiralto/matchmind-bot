@@ -4,12 +4,12 @@ import asyncio
 import discord
 from discord import app_commands, ui
 from discord.ext import commands, tasks
- 
+
 import constants
 import database as db
 import matching
 import views
- 
+
 TOKEN = os.environ.get("DISCORD_TOKEN")
 GUILD_ID = int(os.environ.get("GUILD_ID", "0")) or None
 MATCH_CATEGORY_NAME = "💌 Matchs"
@@ -18,18 +18,18 @@ ROLE_MEMBRE = "❤️ Membre vérifié"
 SALON_SIGNALEMENTS = "🚨signalements"
 SALON_SIGNALER = "🚨signaler"
 ROLE_FONDATEUR = "👑 Fondateur"
- 
+
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
- 
+
 bot = commands.Bot(command_prefix="!", intents=intents)
- 
- 
+
+
 # --------------------------------------------------------------------------
 # BIENVENUE ET RÔLES AUTOMATIQUES
 # --------------------------------------------------------------------------
- 
+
 @bot.event
 async def on_member_join(member: discord.Member):
     guild = member.guild
@@ -50,8 +50,8 @@ async def on_member_join(member: discord.Member):
         )
     except discord.Forbidden:
         pass
- 
- 
+
+
 async def assign_membre_verifie(user_id: int, guild: discord.Guild):
     try:
         member = await guild.fetch_member(user_id)
@@ -68,12 +68,12 @@ async def assign_membre_verifie(user_id: int, guild: discord.Guild):
             await member.add_roles(role_membre)
     except Exception as e:
         print(f"Erreur role: {e}")
- 
- 
+
+
 # --------------------------------------------------------------------------
 # SIGNALEMENT
 # --------------------------------------------------------------------------
- 
+
 MOTIFS_SIGNALEMENT = [
     "Harcèlement / comportement inapproprié",
     "Contenu interdit (photo non sollicitée, contenu sexuel...)",
@@ -81,8 +81,8 @@ MOTIFS_SIGNALEMENT = [
     "Faux profil / arnaque",
     "Autre",
 ]
- 
- 
+
+
 class SignalementModal(ui.Modal, title="Signalement"):
     motif = ui.TextInput(
         label="Motif du signalement",
@@ -101,18 +101,18 @@ class SignalementModal(ui.Modal, title="Signalement"):
         required=False,
         max_length=100,
     )
- 
+
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
         salon = discord.utils.get(guild.text_channels, name=SALON_SIGNALEMENTS)
- 
+
         if salon is None:
             await interaction.response.send_message(
                 "Ton signalement a bien été reçu, un modérateur va s'en occuper.",
                 ephemeral=True,
             )
             return
- 
+
         embed = discord.Embed(
             title="🚨 Nouveau signalement",
             color=0xFF0000,
@@ -127,9 +127,9 @@ class SignalementModal(ui.Modal, title="Signalement"):
             inline=True,
         )
         embed.set_footer(text=f"Signalement anonyme — reçu le {discord.utils.utcnow().strftime('%d/%m/%Y à %H:%M')}")
- 
+
         await salon.send(embed=embed)
- 
+
         # Si le signalement vient d'un salon de match, copier le transcript
         if interaction.channel:
             match = await db.get_match_by_channel(interaction.channel.id)
@@ -143,14 +143,14 @@ class SignalementModal(ui.Modal, title="Signalement"):
                 except Exception:
                     label1 = f"User ID:{match['user1_id']}"
                     label2 = f"User ID:{match['user2_id']}"
- 
+
                 # Lire les deux salons et combiner dans l'ordre chronologique
                 all_messages = []
                 guild_obj = interaction.guild
- 
+
                 channel1_obj = guild_obj.get_channel(match["channel1_id"])
                 channel2_obj = guild_obj.get_channel(match["channel2_id"])
- 
+
                 # On lit uniquement le salon A :
                 # - messages directs = personne A
                 # - messages webhook = personne B (relayés depuis salon B)
@@ -160,10 +160,10 @@ class SignalementModal(ui.Modal, title="Signalement"):
                             all_messages.append((msg.created_at, f"[{msg.created_at.strftime('%H:%M')}] {label1} : {msg.content}"))
                         elif msg.webhook_id and msg.content and not msg.content.startswith("🎉") and "Signaler" not in msg.content:
                             all_messages.append((msg.created_at, f"[{msg.created_at.strftime('%H:%M')}] {label2} : {msg.content}"))
- 
+
                 all_messages.sort(key=lambda x: x[0])
                 messages = [m[1] for m in all_messages]
- 
+
                 if messages:
                     transcript = "\n".join(messages)
                     if len(transcript) > 3900:
@@ -180,37 +180,37 @@ class SignalementModal(ui.Modal, title="Signalement"):
                     )
                     transcript_embed.set_footer(text="⚠️ Confidentiel — usage modération uniquement")
                     await salon.send(embed=transcript_embed)
- 
+
         await interaction.response.send_message(
             "Ton signalement a bien été transmis aux modérateurs de façon anonyme. "
             "Merci de contribuer à la sécurité de MatchMind. 🛡️",
             ephemeral=True,
         )
- 
- 
+
+
 @bot.tree.command(name="signaler", description="Signaler un problème ou un comportement inapproprié")
 async def signaler(interaction: discord.Interaction):
     await interaction.response.send_modal(SignalementModal())
- 
- 
+
+
 async def post_signalement_button(guild: discord.Guild):
     """Poste le message permanent avec le bouton Signaler dans #🚨signaler."""
     salon = discord.utils.get(guild.text_channels, name=SALON_SIGNALER)
     if salon is None:
         return
- 
+
     async for message in salon.history(limit=10):
         if message.author == guild.me:
             return
- 
+
     class SignalerView(ui.View):
         def __init__(self):
             super().__init__(timeout=None)
- 
+
         @ui.button(label="🚨 Signaler un problème", style=discord.ButtonStyle.danger, custom_id="btn_signaler")
         async def signaler_btn(self, interaction: discord.Interaction, button: ui.Button):
             await interaction.response.send_modal(SignalementModal())
- 
+
     embed = discord.Embed(
         title="🛡️ Signaler un problème",
         description=(
@@ -223,39 +223,39 @@ async def post_signalement_button(guild: discord.Guild):
     )
     embed.set_footer(text="Ton signalement restera anonyme et confidentiel.")
     await salon.send(embed=embed, view=SignalerView())
- 
- 
+
+
 class SignalerPersistentView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
- 
+
     @ui.button(label="🚨 Signaler un problème", style=discord.ButtonStyle.danger, custom_id="btn_signaler")
     async def signaler_btn(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(SignalementModal())
- 
- 
+
+
 # --------------------------------------------------------------------------
 # BOUTON SIGNALEMENT DANS LES SALONS DE MATCH
 # --------------------------------------------------------------------------
- 
+
 class MatchSignalerView(ui.View):
     def __init__(self):
         super().__init__(timeout=None)
- 
+
     @ui.button(label="🚨 Signaler ce match", style=discord.ButtonStyle.danger, custom_id="btn_match_signaler")
     async def signaler_match(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(SignalementModal())
- 
- 
+
+
 class MatchActionsView(ui.View):
     def __init__(self, match_id: int):
         super().__init__(timeout=None)
         self.match_id = match_id
- 
+
     @ui.button(label="🚨 Signaler", style=discord.ButtonStyle.danger, custom_id="btn_match_signaler_v2")
     async def signaler(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(SignalementModal())
- 
+
     @ui.button(label="❌ Fermer ce match", style=discord.ButtonStyle.secondary, custom_id="btn_fermer_match_v2")
     async def fermer(self, interaction: discord.Interaction, button: ui.Button):
         match = await db.get_match_by_channel(interaction.channel.id)
@@ -267,23 +267,23 @@ class MatchActionsView(ui.View):
             view=ConfirmerFermetureView(match["match_id"]),
             ephemeral=True
         )
- 
- 
- 
+
+
+
 @bot.event
 async def on_member_remove(member: discord.Member):
     """Supprime le profil d'un membre quand il quitte le serveur."""
     await db.delete_profile(member.id)
     print(f"Profil supprimé pour {member.name} (ID:{member.id}) — a quitté le serveur")
- 
+
 # --------------------------------------------------------------------------
 # INSCRIPTION
 # --------------------------------------------------------------------------
- 
+
 @bot.tree.command(name="inscription", description="Crée ou met à jour ton profil de rencontre")
 async def inscription(interaction: discord.Interaction):
     views.REGISTRATION_SESSIONS[interaction.user.id] = {"data": {}, "interests": []}
- 
+
     async def after_basic_info(modal_interaction: discord.Interaction, data: dict):
         views.REGISTRATION_SESSIONS[modal_interaction.user.id]["data"].update(data)
         await modal_interaction.response.send_message(
@@ -291,11 +291,11 @@ async def inscription(interaction: discord.Interaction):
             view=views.SingleChoiceView(constants.SEXES, "Choisis ton sexe", make_sexe_handler()),
             ephemeral=True,
         )
- 
+
     modal = views.BasicInfoModal(after_basic_info)
     await interaction.response.send_modal(modal)
- 
- 
+
+
 def make_sexe_handler():
     async def handler(interaction: discord.Interaction, value: str):
         views.REGISTRATION_SESSIONS[interaction.user.id]["data"]["sexe"] = value
@@ -307,8 +307,8 @@ def make_sexe_handler():
             ephemeral=True,
         )
     return handler
- 
- 
+
+
 def make_orientation_handler():
     async def handler(interaction: discord.Interaction, value: str):
         views.REGISTRATION_SESSIONS[interaction.user.id]["data"]["orientation"] = value
@@ -320,8 +320,8 @@ def make_orientation_handler():
             ephemeral=True,
         )
     return handler
- 
- 
+
+
 def make_relation_handler():
     async def handler(interaction: discord.Interaction, value: str):
         views.REGISTRATION_SESSIONS[interaction.user.id]["data"]["relation_type"] = value
@@ -332,62 +332,62 @@ def make_relation_handler():
         )
         await send_next_interest_category(interaction, list(views.INTEREST_CATEGORIES.items()), 0)
     return handler
- 
- 
+
+
 async def send_next_interest_category(interaction, categories, index):
     user_id = interaction.user.id
- 
+
     if index >= len(categories):
         await finalize_registration(interaction)
         return
- 
+
     category_name, items = categories[index]
- 
+
     async def handler(select_interaction: discord.Interaction, selected: list):
         views.REGISTRATION_SESSIONS[user_id]["interests"].extend(selected)
         await select_interaction.response.send_message(
             f"Catégorie suivante...", ephemeral=True
         )
         await send_next_interest_category(select_interaction, categories, index + 1)
- 
+
     await interaction.followup.send(
         f"**{category_name}**",
         view=views.InterestCategoryView(category_name, items, handler),
         ephemeral=True,
     )
- 
- 
+
+
 async def finalize_registration(interaction: discord.Interaction):
     user_id = interaction.user.id
     session = views.REGISTRATION_SESSIONS.pop(user_id, None)
     if not session:
         return
- 
+
     data = session["data"]
     data["interests"] = session["interests"]
- 
+
     await db.upsert_profile(user_id, **data)
- 
+
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
         await assign_membre_verifie(user_id, guild)
- 
+
     await interaction.followup.send(
         "Ton profil est enregistré ! Bienvenue dans MatchMind ❤️\n"
         "Tu recevras des suggestions de profils compatibles directement en messages privés, "
         "plusieurs fois par jour.",
         ephemeral=True,
     )
- 
- 
+
+
 # --------------------------------------------------------------------------
 # SUGGESTIONS QUOTIDIENNES
 # --------------------------------------------------------------------------
- 
+
 async def on_like(interaction: discord.Interaction, target_user_id: int, shown_user_id: int):
     await db.add_like(target_user_id, shown_user_id)
     await interaction.response.send_message("Like envoyé ❤️", ephemeral=True)
- 
+
     mutual = await db.has_liked(shown_user_id, target_user_id)
     if mutual:
         await create_match_channels(target_user_id, shown_user_id)
@@ -400,12 +400,12 @@ async def on_like(interaction: discord.Interaction, target_user_id: int, shown_u
             )
         except discord.Forbidden:
             pass
- 
- 
+
+
 async def on_pass(interaction: discord.Interaction, target_user_id: int, shown_user_id: int):
     await interaction.response.send_message("Profil passé.", ephemeral=True)
- 
- 
+
+
 @tasks.loop(hours=8)
 async def send_daily_suggestions():
     profiles = await db.get_all_active_profiles()
@@ -414,13 +414,13 @@ async def send_daily_suggestions():
             user = await bot.fetch_user(profile["user_id"])
         except discord.NotFound:
             continue
- 
+
         candidates = await db.get_all_active_profiles(exclude_user_id=profile["user_id"])
         seen_ids = await db.get_seen_ids(profile["user_id"])
         best = matching.find_best_matches(
             profile, candidates, seen_ids, limit=constants.PROFILES_PER_DAY
         )
- 
+
         for candidate in best:
             await db.mark_seen(profile["user_id"], candidate["user_id"])
             embed = views.build_profile_embed(candidate)
@@ -429,44 +429,44 @@ async def send_daily_suggestions():
                 await user.send(embed=embed, view=view)
             except discord.Forbidden:
                 break
- 
- 
+
+
 @send_daily_suggestions.before_loop
 async def before_send_daily_suggestions():
     await bot.wait_until_ready()
- 
- 
+
+
 # --------------------------------------------------------------------------
 # CRÉATION DES SALONS DE MATCH ANONYMES
 # --------------------------------------------------------------------------
- 
+
 async def get_or_create_match_category(guild: discord.Guild):
     category = discord.utils.get(guild.categories, name=MATCH_CATEGORY_NAME)
     if category is None:
         category = await guild.create_category(MATCH_CATEGORY_NAME)
     return category
- 
- 
+
+
 async def create_match_channels(user1_id: int, user2_id: int):
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else bot.guilds[0]
     if guild is None:
         return
- 
+
     existing = await db.get_existing_match(user1_id, user2_id)
     if existing and existing.get("channel1_id"):
         return
- 
+
     match_id = existing["match_id"] if existing else await db.create_match(user1_id, user2_id)
- 
+
     category = await get_or_create_match_category(guild)
     member1 = guild.get_member(user1_id)
     member2 = guild.get_member(user2_id)
- 
+
     # Permissions strictes : seuls les deux membres et le bot ont accès
     # L'owner est explicitement bloqué sur son compte personnel
     OWNER_ID = 364449220461199370
     owner = guild.get_member(OWNER_ID)
- 
+
     overwrites1 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         guild.me: discord.PermissionOverwrite(
@@ -480,7 +480,7 @@ async def create_match_channels(user1_id: int, user2_id: int):
         )
     if owner and owner != member1:
         overwrites1[owner] = discord.PermissionOverwrite(view_channel=False)
- 
+
     overwrites2 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         guild.me: discord.PermissionOverwrite(
@@ -494,19 +494,19 @@ async def create_match_channels(user1_id: int, user2_id: int):
         )
     if owner and owner != member2:
         overwrites2[owner] = discord.PermissionOverwrite(view_channel=False)
- 
+
     channel1 = await guild.create_text_channel(
         f"match-{match_id}-a", category=category, overwrites=overwrites1
     )
     channel2 = await guild.create_text_channel(
         f"match-{match_id}-b", category=category, overwrites=overwrites2
     )
- 
+
     webhook1 = await channel1.create_webhook(name="Match anonyme")
     webhook2 = await channel2.create_webhook(name="Match anonyme")
- 
+
     await db.set_match_channels(match_id, channel1.id, channel2.id, webhook1.url, webhook2.url)
- 
+
     intro = (
         "🎉 **C'est un match !**\n"
         "Vous pouvez maintenant discuter ici de façon anonyme : votre pseudo Discord "
@@ -516,24 +516,24 @@ async def create_match_channels(user1_id: int, user2_id: int):
     )
     await channel1.send(intro, view=MatchActionsView(match_id))
     await channel2.send(intro, view=MatchActionsView(match_id))
- 
+
     if member1:
         embed = views.build_profile_embed(await db.get_profile(user2_id))
         await channel1.send("Voici un rappel du profil de ton match :", embed=embed)
     if member2:
         embed = views.build_profile_embed(await db.get_profile(user1_id))
         await channel2.send("Voici un rappel du profil de ton match :", embed=embed)
- 
- 
+
+
 # --------------------------------------------------------------------------
 # RELAIS DES MESSAGES ANONYMES
 # --------------------------------------------------------------------------
- 
+
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
- 
+
     match = await db.get_match_by_channel(message.channel.id)
     if match and not match["revealed"]:
         if message.channel.id == match["channel1_id"]:
@@ -543,7 +543,7 @@ async def on_message(message: discord.Message):
         else:
             await bot.process_commands(message)
             return
- 
+
         if other_webhook_url:
             webhook = discord.Webhook.from_url(other_webhook_url, client=bot)
             try:
@@ -554,22 +554,22 @@ async def on_message(message: discord.Message):
                 )
             except discord.HTTPException:
                 pass
- 
+
         await db.increment_message_count(match["match_id"], side)
         updated = await db.get_match_by_channel(message.channel.id)
- 
+
         if updated["count1"] >= constants.MESSAGES_BEFORE_REVEAL and \
            updated["count2"] >= constants.MESSAGES_BEFORE_REVEAL and not updated["revealed"]:
             await propose_reveal(updated)
- 
+
     await bot.process_commands(message)
- 
- 
+
+
 async def propose_reveal(match: dict):
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else bot.guilds[0]
     channel1 = guild.get_channel(match["channel1_id"])
     channel2 = guild.get_channel(match["channel2_id"])
- 
+
     if channel1 and not match["reveal_agree1"]:
         await channel1.send(
             "Vous semblez bien vous entendre ! Voulez-vous révéler vos pseudos Discord ?",
@@ -580,12 +580,12 @@ async def propose_reveal(match: dict):
             "Vous semblez bien vous entendre ! Voulez-vous révéler vos pseudos Discord ?",
             view=views.RevealConfirmView(match["match_id"], 2, on_reveal_accept, on_reveal_decline),
         )
- 
- 
+
+
 async def on_reveal_accept(interaction: discord.Interaction, match_id: int, side: int):
     await db.set_reveal_agree(match_id, side)
     await interaction.response.send_message("D'accord, en attente de l'autre personne...", ephemeral=True)
- 
+
     match = await db.get_match_by_channel(interaction.channel.id)
     if match["reveal_agree1"] and match["reveal_agree2"]:
         await db.set_revealed(match_id)
@@ -598,16 +598,16 @@ async def on_reveal_accept(interaction: discord.Interaction, match_id: int, side
             await channel1.send(f"Vous êtes tous les deux d'accord ! Voici qui tu parlais : {user2_mention}")
         if channel2:
             await channel2.send(f"Vous êtes tous les deux d'accord ! Voici qui tu parlais : {user1_mention}")
- 
- 
+
+
 async def on_reveal_decline(interaction: discord.Interaction, match_id: int, side: int):
     await interaction.response.send_message(
         "Pas de souci, vous restez anonymes pour l'instant.", ephemeral=True
     )
- 
- 
- 
- 
+
+
+
+
 @bot.tree.command(name="voir-match", description="[ADMIN] Accéder temporairement à un salon de match")
 @app_commands.describe(salon="Le salon de match à consulter")
 async def voir_match(interaction: discord.Interaction, salon: discord.TextChannel):
@@ -618,7 +618,7 @@ async def voir_match(interaction: discord.Interaction, salon: discord.TextChanne
             "Tu n'as pas la permission d'utiliser cette commande.", ephemeral=True
         )
         return
- 
+
     # Vérifier que c'est bien un salon de match
     match = await db.get_match_by_channel(salon.id)
     if not match:
@@ -626,15 +626,15 @@ async def voir_match(interaction: discord.Interaction, salon: discord.TextChanne
             "Ce salon n'est pas un salon de match.", ephemeral=True
         )
         return
- 
+
     # Donner accès temporaire
     await salon.set_permissions(interaction.user, view_channel=True, send_messages=False, read_message_history=True)
     await interaction.response.send_message(
         f"Tu as maintenant accès en lecture à {salon.mention}. Utilise `/quitter-match` pour en sortir.",
         ephemeral=True
     )
- 
- 
+
+
 @bot.tree.command(name="quitter-match", description="[ADMIN] Quitter un salon de match consulté")
 @app_commands.describe(salon="Le salon de match à quitter")
 async def quitter_match(interaction: discord.Interaction, salon: discord.TextChannel):
@@ -645,20 +645,20 @@ async def quitter_match(interaction: discord.Interaction, salon: discord.TextCha
             "Tu n'as pas la permission d'utiliser cette commande.", ephemeral=True
         )
         return
- 
+
     # Retirer l'accès
     await salon.set_permissions(interaction.user, view_channel=False)
     await interaction.response.send_message(
         f"Tu n'as plus accès à {salon.mention}.",
         ephemeral=True
     )
- 
- 
+
+
 class FermerMatchView(ui.View):
     def __init__(self, match_id: int):
         super().__init__(timeout=None)
         self.match_id = match_id
- 
+
     @ui.button(label="❌ Fermer ce match", style=discord.ButtonStyle.danger, custom_id="btn_fermer_match")
     async def fermer(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_message(
@@ -666,13 +666,13 @@ class FermerMatchView(ui.View):
             view=ConfirmerFermetureView(self.match_id),
             ephemeral=True
         )
- 
- 
+
+
 class ConfirmerFermetureView(ui.View):
     def __init__(self, match_id: int):
         super().__init__(timeout=60)
         self.match_id = match_id
- 
+
     @ui.button(label="Oui, fermer le match", style=discord.ButtonStyle.danger)
     async def confirmer(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_message("Match fermé. Bonne continuation !", ephemeral=True)
@@ -680,19 +680,19 @@ class ConfirmerFermetureView(ui.View):
         match = await db.get_match_by_channel(interaction.channel.id)
         if not match:
             return
- 
+
         channel1 = guild.get_channel(match["channel1_id"])
         channel2 = guild.get_channel(match["channel2_id"])
- 
+
         msg_fermeture = "Ce match a été fermé. Les salons vont être supprimés dans 10 secondes."
         if channel1:
             await channel1.send(msg_fermeture)
         if channel2:
             await channel2.send(msg_fermeture)
- 
+
         import asyncio
         await asyncio.sleep(10)
- 
+
         if channel1:
             try:
                 await channel1.delete()
@@ -703,15 +703,15 @@ class ConfirmerFermetureView(ui.View):
                 await channel2.delete()
             except Exception:
                 pass
- 
+
     @ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
     async def annuler(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_message("Fermeture annulée.", ephemeral=True)
- 
+
 # --------------------------------------------------------------------------
 # COMMANDE DE TEST (ADMIN UNIQUEMENT)
 # --------------------------------------------------------------------------
- 
+
 @bot.tree.command(name="test-match", description="[ADMIN] Forcer un match entre deux membres pour tester")
 @app_commands.describe(membre1="Premier membre", membre2="Deuxième membre")
 async def test_match(interaction: discord.Interaction, membre1: discord.Member, membre2: discord.Member):
@@ -722,29 +722,106 @@ async def test_match(interaction: discord.Interaction, membre1: discord.Member, 
             "Tu n'as pas la permission d'utiliser cette commande.", ephemeral=True
         )
         return
- 
+
     if membre1.id == membre2.id:
         await interaction.response.send_message(
             "Les deux membres doivent être différents.", ephemeral=True
         )
         return
- 
+
     await interaction.response.send_message(
         f"Création d'un match de test entre {membre1.display_name} et {membre2.display_name}...", ephemeral=True
     )
- 
+
     await db.add_like(membre1.id, membre2.id)
     await db.add_like(membre2.id, membre1.id)
     await create_match_channels(membre1.id, membre2.id)
- 
+
     await interaction.followup.send(
         f"Match de test créé entre {membre1.display_name} et {membre2.display_name} ! Vérifie la catégorie 💌 Matchs.", ephemeral=True
     )
- 
+
+
+# --------------------------------------------------------------------------
+# CITATIONS DU JOUR VIA API CLAUDE
+# --------------------------------------------------------------------------
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY")
+SALON_CITATIONS = "✨citations-du-jour"
+
+
+async def generer_citation():
+    """Génère une belle citation sur l'amour et les rencontres via l'API Claude."""
+    import aiohttp
+    
+    themes = [
+        "l'amour authentique", "la patience en amour", "se découvrir avant de se montrer",
+        "la confiance dans une relation", "l'importance des valeurs communes",
+        "la connexion émotionnelle", "la sincérité en amour", "les rencontres inattendues",
+        "prendre le temps de se connaître", "l'amour qui dure"
+    ]
+    import random
+    theme = random.choice(themes)
+
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+    payload = {
+        "model": "claude-haiku-4-5",
+        "max_tokens": 150,
+        "messages": [{
+            "role": "user",
+            "content": f"Génère une belle citation originale et poétique sur le thème : {theme}. "
+                      f"La citation doit être courte (1-2 phrases max), inspirante et universelle. "
+                      f"Réponds UNIQUEMENT avec la citation entre guillemets français (« »), "
+                      f"suivie d'un saut de ligne et d'un auteur (réel ou 'Anonyme'). "
+                      f"Aucun autre texte."
+        }]
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            return data["content"][0]["text"].strip()
+
+
+@tasks.loop(hours=8)
+async def envoyer_citation():
+    """Envoie une citation 3 fois par jour dans le salon dédié."""
+    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+    if not guild:
+        return
+
+    salon = discord.utils.get(guild.text_channels, name=SALON_CITATIONS)
+    if not salon:
+        return
+
+    try:
+        citation = await generer_citation()
+        embed = discord.Embed(
+            description=f"✨ **Citation du jour**\n\n{citation}",
+            color=0xE91E8C
+        )
+        embed.set_footer(text="MatchMind — Trouve quelqu'un qui te ressemble vraiment 💘")
+        await salon.send(embed=embed)
+    except Exception as e:
+        print(f"Erreur génération citation : {e}")
+
+
+@envoyer_citation.before_loop
+async def before_envoyer_citation():
+    await bot.wait_until_ready()
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
- 
+
 @bot.event
 async def on_ready():
     await db.init_db()
@@ -762,17 +839,19 @@ async def on_ready():
         print(f"{len(synced)} commande(s) synchronisée(s) : {[c.name for c in synced]}")
     except Exception as e:
         print(f"Erreur de synchronisation des commandes : {e}")
- 
+
     if not send_daily_suggestions.is_running():
         send_daily_suggestions.start()
- 
+    if not envoyer_citation.is_running():
+        envoyer_citation.start()
+
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
         await post_signalement_button(guild)
- 
+
     print(f"Connecté en tant que {bot.user}")
- 
- 
+
+
 if __name__ == "__main__":
     if not TOKEN:
         raise RuntimeError("La variable d'environnement DISCORD_TOKEN n'est pas définie.")
