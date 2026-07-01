@@ -1380,6 +1380,20 @@ async def messages_ambiance():
         )
         await salon.send(embed=embed)
 
+    elif now.weekday() == 4 and now.hour == 19 and now.minute == 0:
+        embed = discord.Embed(
+            description="😏 **C'est vendredi !**\nQui cherche un match pour le weekend ? Le bot est prêt à faire des étincelles 💘",
+            color=0xE74C3C
+        )
+        await salon.send(embed=embed)
+
+    elif now.weekday() == 6 and now.hour == 20 and now.minute == 0:
+        embed = discord.Embed(
+            description="💫 **Nouvelle semaine qui arrive...**\nDe nouvelles rencontres t'attendent sur MatchMind 💘 Lance-toi !",
+            color=0x3498DB
+        )
+        await salon.send(embed=embed)
+
 
 @messages_ambiance.before_loop
 async def before_messages_ambiance():
