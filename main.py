@@ -744,6 +744,101 @@ class ConfirmerFermetureView(ui.View):
     async def annuler(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_message("Fermeture annulée.", ephemeral=True)
 
+
+# --------------------------------------------------------------------------
+# SYSTÈME DE TÉMOIGNAGES
+# --------------------------------------------------------------------------
+
+class TemoignageModal(ui.Modal, title="Partager mon témoignage"):
+    temoignage = ui.TextInput(
+        label="Ton témoignage",
+        style=discord.TextStyle.paragraph,
+        placeholder="Raconte ton expérience sur MatchMind...",
+        max_length=500,
+    )
+    anonyme = ui.TextInput(
+        label="Anonyme ? (oui/non)",
+        placeholder="Tape 'oui' pour rester anonyme, 'non' pour afficher ton pseudo",
+        max_length=3,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        role_membre = discord.utils.get(guild.roles, name=ROLE_MEMBRE)
+        if not role_membre or role_membre not in interaction.user.roles:
+            await interaction.response.send_message(
+                "Tu dois avoir complété ton inscription pour partager un témoignage.",
+                ephemeral=True
+            )
+            return
+
+        salon = None
+        for ch in guild.text_channels:
+            if "temoignage" in ch.name.lower():
+                salon = ch
+                break
+
+        if not salon:
+            await interaction.response.send_message(
+                "Salon introuvable.", ephemeral=True
+            )
+            return
+
+        est_anonyme = self.anonyme.value.lower().strip() in ("oui", "o", "yes", "y")
+        auteur = "Anonyme ✨" if est_anonyme else f"{interaction.user.display_name} 💌"
+
+        embed = discord.Embed(
+            title="💝 Témoignage",
+            description=f'"{self.temoignage.value}"',
+            color=0xE91E8C
+        )
+        embed.set_footer(text=f"— {auteur}")
+        await salon.send(embed=embed)
+        await interaction.response.send_message(
+            "Ton témoignage a été partagé, merci ! 💌",
+            ephemeral=True
+        )
+
+
+class TemoignageView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(
+        label="📝 Partager mon témoignage",
+        style=discord.ButtonStyle.primary,
+        custom_id="btn_temoignage"
+    )
+    async def partager(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(TemoignageModal())
+
+
+async def post_temoignage_button(guild: discord.Guild):
+    """Poste le message avec le bouton dans #témoignages au démarrage."""
+    salon = None
+    for ch in guild.text_channels:
+        if "temoignage" in ch.name.lower():
+            salon = ch
+            break
+    if not salon:
+        return
+
+    async for message in salon.history(limit=20):
+        if message.author == guild.me and message.components:
+            return
+
+    embed = discord.Embed(
+        title="💝 Témoignages MatchMind",
+        description=(
+            "Tu as vécu une belle expérience sur MatchMind ?\n"
+            "Un match qui s'est bien passé, une conversation qui t'a surpris(e) ?\n\n"
+            "Partage ton histoire avec la communauté ! Tu peux rester **anonyme** si tu préfères.\n\n"
+            "⚠️ Réservé aux membres ayant complété leur inscription."
+        ),
+        color=0xE91E8C
+    )
+    await salon.send(embed=embed, view=TemoignageView())
+
 # --------------------------------------------------------------------------
 # COMMANDE DE TEST (ADMIN UNIQUEMENT)
 # --------------------------------------------------------------------------
@@ -1095,6 +1190,7 @@ async def on_ready():
     bot.add_view(MatchSignalerView())
     bot.add_view(FermerMatchView(0))
     bot.add_view(MatchActionsView(0))
+    bot.add_view(TemoignageView())
     try:
         if GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
@@ -1118,6 +1214,7 @@ async def on_ready():
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
         await post_signalement_button(guild)
+        await post_temoignage_button(guild)
 
     print(f"Connecté en tant que {bot.user}")
 
