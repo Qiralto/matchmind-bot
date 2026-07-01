@@ -1772,6 +1772,161 @@ async def voir_qui_ma_like(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed, ephemeral=True)
 
+
+# --------------------------------------------------------------------------
+# SYSTÈME D'AVERTISSEMENTS
+# --------------------------------------------------------------------------
+
+@bot.tree.command(name="avertir", description="[MODO] Donner un avertissement à un membre")
+@app_commands.describe(membre="Le membre à avertir", raison="La raison de l'avertissement")
+async def avertir(interaction: discord.Interaction, membre: discord.Member, raison: str):
+    guild = interaction.guild
+    role_modo = discord.utils.get(guild.roles, name="🛡️ Modérateur")
+    role_fondateur = discord.utils.get(guild.roles, name=ROLE_FONDATEUR)
+    if not ((role_modo and role_modo in interaction.user.roles) or
+            (role_fondateur and role_fondateur in interaction.user.roles)):
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+
+    await db.add_warning(membre.id, raison, interaction.user.id)
+    count = await db.count_warnings(membre.id)
+
+    await interaction.response.send_message(
+        f"⚠️ Avertissement donné à {membre.display_name}. "
+        f"Il/elle a maintenant **{count} avertissement(s)**.",
+        ephemeral=True
+    )
+
+    # Log dans #logs-modération
+    salon_logs = discord.utils.get(guild.text_channels, name="logs-modération")
+    if not salon_logs:
+        for ch in guild.text_channels:
+            if "logs" in ch.name.lower() and "mod" in ch.name.lower():
+                salon_logs = ch
+                break
+    if salon_logs:
+        embed = discord.Embed(
+            title="⚠️ Avertissement",
+            color=0xF1C40F
+        )
+        embed.add_field(name="Membre", value=f"{membre.display_name} (ID:{membre.id})", inline=True)
+        embed.add_field(name="Avertissements", value=f"{count}/5", inline=True)
+        embed.add_field(name="Raison", value=raison, inline=False)
+        embed.add_field(name="Modérateur", value=interaction.user.display_name, inline=True)
+        embed.set_footer(text=discord.utils.utcnow().strftime("%d/%m/%Y à %H:%M"))
+        await salon_logs.send(embed=embed)
+
+    # DM au membre
+    try:
+        await membre.send(
+            f"⚠️ Tu as reçu un avertissement sur **MatchMind**\n\n"
+            f"**Raison :** {raison}\n"
+            f"**Avertissements :** {count}/5\n\n"
+            f"Merci de respecter le règlement pour continuer à profiter du serveur 🙏"
+        )
+    except discord.Forbidden:
+        pass
+
+    # Sanctions automatiques
+    if count == 2:
+        try:
+            await membre.send(
+                "⚠️ **Attention !** Tu as 2 avertissements sur MatchMind. "
+                "Au 3ème, ton accès au matching sera suspendu automatiquement."
+            )
+        except discord.Forbidden:
+            pass
+
+    elif count == 3:
+        await db.delete_profile(membre.id)
+        role_membre = discord.utils.get(guild.roles, name=ROLE_MEMBRE)
+        role_suspendu = discord.utils.get(guild.roles, name=ROLE_SUSPENDU)
+        try:
+            if role_membre and role_membre in membre.roles:
+                await membre.remove_roles(role_membre)
+            if role_suspendu and role_suspendu not in membre.roles:
+                await membre.add_roles(role_suspendu)
+            await membre.send(
+                "🚫 Suite à 3 avertissements, ton accès au système de matching a été "
+                "suspendu automatiquement. Tu restes membre du serveur mais ne peux plus matcher. "
+                "Contacte un modérateur si tu penses que c'est une erreur."
+            )
+        except discord.Forbidden:
+            pass
+        if salon_logs:
+            await salon_logs.send(
+                f"🚫 **Suspension automatique** — {membre.display_name} a atteint 3 avertissements. "
+                f"Accès au matching suspendu."
+            )
+
+    elif count == 5:
+        try:
+            await membre.send(
+                "⛔ Suite à 5 avertissements, tu as été exclu(e) automatiquement de MatchMind. "
+                "Contacte un modérateur si tu penses que c'est une erreur."
+            )
+            await membre.kick(reason=f"5 avertissements atteints")
+        except discord.Forbidden:
+            pass
+        if salon_logs:
+            await salon_logs.send(
+                f"⛔ **Kick automatique** — {membre.display_name} a atteint 5 avertissements."
+            )
+
+
+@bot.tree.command(name="avertissements", description="[MODO] Voir les avertissements d'un membre")
+@app_commands.describe(membre="Le membre à vérifier")
+async def voir_avertissements(interaction: discord.Interaction, membre: discord.Member):
+    guild = interaction.guild
+    role_modo = discord.utils.get(guild.roles, name="🛡️ Modérateur")
+    role_fondateur = discord.utils.get(guild.roles, name=ROLE_FONDATEUR)
+    if not ((role_modo and role_modo in interaction.user.roles) or
+            (role_fondateur and role_fondateur in interaction.user.roles)):
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+
+    warnings = await db.get_warnings(membre.id)
+    count = len(warnings)
+
+    if count == 0:
+        await interaction.response.send_message(
+            f"✅ {membre.display_name} n'a aucun avertissement.", ephemeral=True
+        )
+        return
+
+    embed = discord.Embed(
+        title=f"⚠️ Avertissements de {membre.display_name}",
+        description=f"**Total : {count}/5**",
+        color=0xF1C40F
+    )
+    for i, w in enumerate(warnings[:5], 1):
+        from datetime import datetime
+        date = datetime.fromtimestamp(w["created_at"]).strftime("%d/%m/%Y")
+        embed.add_field(
+            name=f"Avertissement {i} — {date}",
+            value=w["reason"],
+            inline=False
+        )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="retirer-avertissement", description="[MODO] Retirer le dernier avertissement d'un membre")
+@app_commands.describe(membre="Le membre concerné")
+async def retirer_avertissement(interaction: discord.Interaction, membre: discord.Member):
+    guild = interaction.guild
+    role_fondateur = discord.utils.get(guild.roles, name=ROLE_FONDATEUR)
+    if not role_fondateur or role_fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+
+    await db.remove_last_warning(membre.id)
+    count = await db.count_warnings(membre.id)
+    await interaction.response.send_message(
+        f"✅ Dernier avertissement retiré pour {membre.display_name}. "
+        f"Il/elle a maintenant **{count} avertissement(s)**.",
+        ephemeral=True
+    )
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
