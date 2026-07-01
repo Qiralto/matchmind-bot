@@ -39,14 +39,34 @@ async def on_member_join(member: discord.Member):
             await member.add_roles(role_nouveau)
         except discord.Forbidden:
             pass
+    # Message public dans #présentation
+    for ch in member.guild.text_channels:
+        if "presentation" in ch.name.lower() or "présentation" in ch.name.lower():
+            try:
+                embed = discord.Embed(
+                    description=f"👋 **{member.display_name}** vient de rejoindre MatchMind ! Bienvenue parmi nous 💘",
+                    color=0xE91E8C
+                )
+                embed.set_footer(text=f"Membre #{member.guild.member_count} sur MatchMind")
+                await ch.send(embed=embed)
+            except discord.Forbidden:
+                pass
+            break
+
     try:
         await member.send(
             f"Bienvenue sur **MatchMind**, {member.display_name} ! 💘\n\n"
-            "MatchMind est un serveur de rencontre différent : pas de photo, juste tes centres "
-            "d'intérêt et ta personnalité. On se découvre d'abord, on se révèle ensuite.\n\n"
-            "Pour commencer, lis le règlement sur le serveur, puis tape `/inscription` "
-            "dans le salon **✨inscription** pour créer ton profil.\n\n"
-            "On a hâte de te faire découvrir des personnes qui te correspondent vraiment ! ✨"
+            "Tu rejoins l'aventure au tout début de MatchMind, et c'est une chance ! "
+            "Les premiers membres sont ceux qui vont construire cette communauté et en profiter en premier. "
+            "Merci d'être là ! 🌟\n\n"
+            "MatchMind est un serveur de rencontre différent : pas de photo, pas de jugement sur l'apparence. "
+            "On se découvre par nos centres d'intérêt et notre personnalité. "
+            "On discute anonymement, et on se révèle quand on est prêt(e).\n\n"
+            "Pour commencer :\n"
+            "1️⃣ Lis le règlement dans **#📜règles**\n"
+            "2️⃣ Tape `/inscription` dans **#✨inscription** pour créer ton profil\n"
+            "3️⃣ Laisse le bot faire la magie ! 🤖\n\n"
+            "Des questions ? Pose-les dans **#💬discussions**. On est là pour toi ! 💌"
         )
     except discord.Forbidden:
         pass
