@@ -1,16 +1,22 @@
-"""Gestion de la base de données SQLite pour le bot de rencontre."""
-import aiosqlite
+"""Gestion de la base de données PostgreSQL (Supabase) pour le bot de rencontre."""
+import os
 import json
 import time
-
-DB_PATH = "dating_bot.db"
-
-
+import asyncpg
+ 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+ 
+ 
+async def get_conn():
+    return await asyncpg.connect(DATABASE_URL)
+ 
+ 
 async def init_db():
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("""
+    conn = await get_conn()
+    try:
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS profiles (
-                user_id INTEGER PRIMARY KEY,
+                user_id BIGINT PRIMARY KEY,
                 prenom TEXT,
                 age INTEGER,
                 sexe TEXT,
@@ -21,32 +27,32 @@ async def init_db():
                 description TEXT,
                 icebreaker TEXT,
                 active INTEGER DEFAULT 1,
-                created_at INTEGER
+                created_at BIGINT
             )
         """)
-        await db.execute("""
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS likes (
-                liker_id INTEGER,
-                liked_id INTEGER,
-                created_at INTEGER,
+                liker_id BIGINT,
+                liked_id BIGINT,
+                created_at BIGINT,
                 PRIMARY KEY (liker_id, liked_id)
             )
         """)
-        await db.execute("""
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS seen (
-                user_id INTEGER,
-                shown_user_id INTEGER,
-                created_at INTEGER,
+                user_id BIGINT,
+                shown_user_id BIGINT,
+                created_at BIGINT,
                 PRIMARY KEY (user_id, shown_user_id)
             )
         """)
-        await db.execute("""
+        await conn.execute("""
             CREATE TABLE IF NOT EXISTS matches (
-                match_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user1_id INTEGER,
-                user2_id INTEGER,
-                channel1_id INTEGER,
-                channel2_id INTEGER,
+                match_id SERIAL PRIMARY KEY,
+                user1_id BIGINT,
+                user2_id BIGINT,
+                channel1_id BIGINT,
+                channel2_id BIGINT,
                 webhook1_url TEXT,
                 webhook2_url TEXT,
                 count1 INTEGER DEFAULT 0,
@@ -54,156 +60,180 @@ async def init_db():
                 revealed INTEGER DEFAULT 0,
                 reveal_agree1 INTEGER DEFAULT 0,
                 reveal_agree2 INTEGER DEFAULT 0,
-                created_at INTEGER
+                created_at BIGINT
             )
         """)
-        await db.commit()
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def upsert_profile(user_id, **fields):
     fields["interests"] = json.dumps(fields.get("interests", []), ensure_ascii=False)
     fields["user_id"] = user_id
     fields["created_at"] = int(time.time())
     cols = ", ".join(fields.keys())
-    placeholders = ", ".join("?" for _ in fields)
-    updates = ", ".join(f"{k}=excluded.{k}" for k in fields if k != "user_id")
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
+    placeholders = ", ".join(f"${i+1}" for i in range(len(fields)))
+    updates = ", ".join(f"{k}=EXCLUDED.{k}" for k in fields if k != "user_id")
+    conn = await get_conn()
+    try:
+        await conn.execute(
             f"INSERT INTO profiles ({cols}) VALUES ({placeholders}) "
             f"ON CONFLICT(user_id) DO UPDATE SET {updates}",
-            list(fields.values()),
+            *fields.values(),
         )
-        await db.commit()
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def get_profile(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute("SELECT * FROM profiles WHERE user_id = ?", (user_id,))
-        row = await cur.fetchone()
+    conn = await get_conn()
+    try:
+        row = await conn.fetchrow("SELECT * FROM profiles WHERE user_id = $1", user_id)
         if row:
             d = dict(row)
             d["interests"] = json.loads(d["interests"] or "[]")
             return d
         return None
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def get_all_active_profiles(exclude_user_id=None):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM profiles WHERE active = 1 AND user_id != ?",
-            (exclude_user_id or 0,),
+    conn = await get_conn()
+    try:
+        rows = await conn.fetch(
+            "SELECT * FROM profiles WHERE active = 1 AND user_id != $1",
+            exclude_user_id or 0,
         )
-        rows = await cur.fetchall()
         results = []
         for row in rows:
             d = dict(row)
             d["interests"] = json.loads(d["interests"] or "[]")
             results.append(d)
         return results
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def mark_seen(user_id, shown_user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO seen (user_id, shown_user_id, created_at) VALUES (?, ?, ?)",
-            (user_id, shown_user_id, int(time.time())),
+    conn = await get_conn()
+    try:
+        await conn.execute(
+            "INSERT INTO seen (user_id, shown_user_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            user_id, shown_user_id, int(time.time()),
         )
-        await db.commit()
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def get_seen_ids(user_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute("SELECT shown_user_id FROM seen WHERE user_id = ?", (user_id,))
-        rows = await cur.fetchall()
-        return {r[0] for r in rows}
-
-
+    conn = await get_conn()
+    try:
+        rows = await conn.fetch("SELECT shown_user_id FROM seen WHERE user_id = $1", user_id)
+        return {r["shown_user_id"] for r in rows}
+    finally:
+        await conn.close()
+ 
+ 
 async def add_like(liker_id, liked_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT OR IGNORE INTO likes (liker_id, liked_id, created_at) VALUES (?, ?, ?)",
-            (liker_id, liked_id, int(time.time())),
+    conn = await get_conn()
+    try:
+        await conn.execute(
+            "INSERT INTO likes (liker_id, liked_id, created_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            liker_id, liked_id, int(time.time()),
         )
-        await db.commit()
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def has_liked(liker_id, liked_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT 1 FROM likes WHERE liker_id = ? AND liked_id = ?", (liker_id, liked_id)
+    conn = await get_conn()
+    try:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM likes WHERE liker_id = $1 AND liked_id = $2", liker_id, liked_id
         )
-        return await cur.fetchone() is not None
-
-
-async def has_been_liked_by_anyone_unseen(user_id):
-    """Retourne True s'il existe un like reçu pour lequel on n'a pas encore notifié."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "SELECT COUNT(*) FROM likes WHERE liked_id = ?", (user_id,)
-        )
-        row = await cur.fetchone()
-        return row[0] > 0
-
-
+        return row is not None
+    finally:
+        await conn.close()
+ 
+ 
 async def create_match(user1_id, user2_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        cur = await db.execute(
-            "INSERT INTO matches (user1_id, user2_id, created_at) VALUES (?, ?, ?)",
-            (user1_id, user2_id, int(time.time())),
+    conn = await get_conn()
+    try:
+        row = await conn.fetchrow(
+            "INSERT INTO matches (user1_id, user2_id, created_at) VALUES ($1, $2, $3) RETURNING match_id",
+            user1_id, user2_id, int(time.time()),
         )
-        await db.commit()
-        return cur.lastrowid
-
-
+        return row["match_id"]
+    finally:
+        await conn.close()
+ 
+ 
 async def set_match_channels(match_id, channel1_id, channel2_id, webhook1_url, webhook2_url):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE matches SET channel1_id=?, channel2_id=?, webhook1_url=?, webhook2_url=? "
-            "WHERE match_id=?",
-            (channel1_id, channel2_id, webhook1_url, webhook2_url, match_id),
+    conn = await get_conn()
+    try:
+        await conn.execute(
+            "UPDATE matches SET channel1_id=$1, channel2_id=$2, webhook1_url=$3, webhook2_url=$4 WHERE match_id=$5",
+            channel1_id, channel2_id, webhook1_url, webhook2_url, match_id,
         )
-        await db.commit()
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def get_match_by_channel(channel_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM matches WHERE channel1_id = ? OR channel2_id = ?",
-            (channel_id, channel_id),
+    conn = await get_conn()
+    try:
+        row = await conn.fetchrow(
+            "SELECT * FROM matches WHERE channel1_id = $1 OR channel2_id = $1",
+            channel_id,
         )
-        row = await cur.fetchone()
         return dict(row) if row else None
-
-
+    finally:
+        await conn.close()
+ 
+ 
 async def increment_message_count(match_id, side):
     col = "count1" if side == 1 else "count2"
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(f"UPDATE matches SET {col} = {col} + 1 WHERE match_id = ?", (match_id,))
-        await db.commit()
-
-
+    conn = await get_conn()
+    try:
+        await conn.execute(f"UPDATE matches SET {col} = {col} + 1 WHERE match_id = $1", match_id)
+    finally:
+        await conn.close()
+ 
+ 
 async def set_reveal_agree(match_id, side):
     col = "reveal_agree1" if side == 1 else "reveal_agree2"
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(f"UPDATE matches SET {col} = 1 WHERE match_id = ?", (match_id,))
-        await db.commit()
-
-
+    conn = await get_conn()
+    try:
+        await conn.execute(f"UPDATE matches SET {col} = 1 WHERE match_id = $1", match_id)
+    finally:
+        await conn.close()
+ 
+ 
 async def set_revealed(match_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE matches SET revealed = 1 WHERE match_id = ?", (match_id,))
-        await db.commit()
-
-
+    conn = await get_conn()
+    try:
+        await conn.execute("UPDATE matches SET revealed = 1 WHERE match_id = $1", match_id)
+    finally:
+        await conn.close()
+ 
+ 
 async def get_existing_match(user1_id, user2_id):
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        cur = await db.execute(
-            "SELECT * FROM matches WHERE (user1_id=? AND user2_id=?) OR (user1_id=? AND user2_id=?)",
-            (user1_id, user2_id, user2_id, user1_id),
+    conn = await get_conn()
+    try:
+        row = await conn.fetchrow(
+            "SELECT * FROM matches WHERE (user1_id=$1 AND user2_id=$2) OR (user1_id=$2 AND user2_id=$1)",
+            user1_id, user2_id,
         )
-        row = await cur.fetchone()
         return dict(row) if row else None
+    finally:
+        await conn.close()
+ 
+ 
+async def has_been_liked_by_anyone_unseen(user_id):
+    conn = await get_conn()
+    try:
+        row = await conn.fetchrow("SELECT COUNT(*) FROM likes WHERE liked_id = $1", user_id)
+        return row[0] > 0
+    finally:
+        await conn.close()
