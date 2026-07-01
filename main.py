@@ -247,6 +247,28 @@ class MatchSignalerView(ui.View):
         await interaction.response.send_modal(SignalementModal())
  
  
+class MatchActionsView(ui.View):
+    def __init__(self, match_id: int):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+ 
+    @ui.button(label="🚨 Signaler", style=discord.ButtonStyle.danger, custom_id="btn_match_signaler_v2")
+    async def signaler(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(SignalementModal())
+ 
+    @ui.button(label="❌ Fermer ce match", style=discord.ButtonStyle.secondary, custom_id="btn_fermer_match_v2")
+    async def fermer(self, interaction: discord.Interaction, button: ui.Button):
+        match = await db.get_match_by_channel(interaction.channel.id)
+        if not match:
+            await interaction.response.send_message("Salon introuvable.", ephemeral=True)
+            return
+        await interaction.response.send_message(
+            "Es-tu sûr(e) de vouloir fermer ce match ? Cette action est définitive et supprimera les deux salons.",
+            view=ConfirmerFermetureView(match["match_id"]),
+            ephemeral=True
+        )
+ 
+ 
 # --------------------------------------------------------------------------
 # INSCRIPTION
 # --------------------------------------------------------------------------
@@ -483,10 +505,10 @@ async def create_match_channels(user1_id: int, user2_id: int):
         "Vous pouvez maintenant discuter ici de façon anonyme : votre pseudo Discord "
         "n'est pas visible par l'autre personne. Après quelques échanges, vous pourrez "
         "choisir ensemble de révéler vos profils si vous le souhaitez.\n\n"
-        "Merci de rester respectueux·se. En cas de souci, utilise le bouton ci-dessous."
+        "Merci de rester respectueux·se. Utilise les boutons ci-dessous si besoin."
     )
-    await channel1.send(intro, view=MatchSignalerView())
-    await channel2.send(intro, view=MatchSignalerView())
+    await channel1.send(intro, view=MatchActionsView(match_id))
+    await channel2.send(intro, view=MatchActionsView(match_id))
  
     if member1:
         embed = views.build_profile_embed(await db.get_profile(user2_id))
@@ -624,37 +646,92 @@ async def quitter_match(interaction: discord.Interaction, salon: discord.TextCha
         ephemeral=True
     )
  
+ 
+class FermerMatchView(ui.View):
+    def __init__(self, match_id: int):
+        super().__init__(timeout=None)
+        self.match_id = match_id
+ 
+    @ui.button(label="❌ Fermer ce match", style=discord.ButtonStyle.danger, custom_id="btn_fermer_match")
+    async def fermer(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_message(
+            "Es-tu sûr(e) de vouloir fermer ce match ? Cette action est définitive.",
+            view=ConfirmerFermetureView(self.match_id),
+            ephemeral=True
+        )
+ 
+ 
+class ConfirmerFermetureView(ui.View):
+    def __init__(self, match_id: int):
+        super().__init__(timeout=60)
+        self.match_id = match_id
+ 
+    @ui.button(label="Oui, fermer le match", style=discord.ButtonStyle.danger)
+    async def confirmer(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_message("Match fermé. Bonne continuation !", ephemeral=True)
+        guild = interaction.guild
+        match = await db.get_match_by_channel(interaction.channel.id)
+        if not match:
+            return
+ 
+        channel1 = guild.get_channel(match["channel1_id"])
+        channel2 = guild.get_channel(match["channel2_id"])
+ 
+        msg_fermeture = "Ce match a été fermé. Les salons vont être supprimés dans 10 secondes."
+        if channel1:
+            await channel1.send(msg_fermeture)
+        if channel2:
+            await channel2.send(msg_fermeture)
+ 
+        import asyncio
+        await asyncio.sleep(10)
+ 
+        if channel1:
+            try:
+                await channel1.delete()
+            except Exception:
+                pass
+        if channel2:
+            try:
+                await channel2.delete()
+            except Exception:
+                pass
+ 
+    @ui.button(label="Annuler", style=discord.ButtonStyle.secondary)
+    async def annuler(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_message("Fermeture annulée.", ephemeral=True)
+ 
 # --------------------------------------------------------------------------
 # COMMANDE DE TEST (ADMIN UNIQUEMENT)
 # --------------------------------------------------------------------------
  
 @bot.tree.command(name="test-match", description="[ADMIN] Forcer un match entre deux membres pour tester")
-@app_commands.describe(membre="Le membre avec qui créer un match de test")
-async def test_match(interaction: discord.Interaction, membre: discord.Member):
+@app_commands.describe(membre1="Premier membre", membre2="Deuxième membre")
+async def test_match(interaction: discord.Interaction, membre1: discord.Member, membre2: discord.Member):
     guild = interaction.guild
-    fondateur = discord.utils.get(guild.roles, name="👑 Fondateur")
+    fondateur = discord.utils.get(guild.roles, name=ROLE_FONDATEUR)
     if not fondateur or fondateur not in interaction.user.roles:
         await interaction.response.send_message(
             "Tu n'as pas la permission d'utiliser cette commande.", ephemeral=True
         )
         return
  
-    if membre.id == interaction.user.id:
+    if membre1.id == membre2.id:
         await interaction.response.send_message(
-            "Tu ne peux pas te matcher avec toi-même.", ephemeral=True
+            "Les deux membres doivent être différents.", ephemeral=True
         )
         return
  
     await interaction.response.send_message(
-        f"Création d'un match de test entre toi et {membre.display_name}...", ephemeral=True
+        f"Création d'un match de test entre {membre1.display_name} et {membre2.display_name}...", ephemeral=True
     )
  
-    await db.add_like(interaction.user.id, membre.id)
-    await db.add_like(membre.id, interaction.user.id)
-    await create_match_channels(interaction.user.id, membre.id)
+    await db.add_like(membre1.id, membre2.id)
+    await db.add_like(membre2.id, membre1.id)
+    await create_match_channels(membre1.id, membre2.id)
  
     await interaction.followup.send(
-        f"Match de test créé ! Vérifie la catégorie 💌 Matchs.", ephemeral=True
+        f"Match de test créé entre {membre1.display_name} et {membre2.display_name} ! Vérifie la catégorie 💌 Matchs.", ephemeral=True
     )
  
 # --------------------------------------------------------------------------
@@ -666,6 +743,8 @@ async def on_ready():
     await db.init_db()
     bot.add_view(SignalerPersistentView())
     bot.add_view(MatchSignalerView())
+    bot.add_view(FermerMatchView(0))
+    bot.add_view(MatchActionsView(0))
     try:
         if GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
