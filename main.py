@@ -269,6 +269,13 @@ class MatchActionsView(ui.View):
         )
  
  
+ 
+@bot.event
+async def on_member_remove(member: discord.Member):
+    """Supprime le profil d'un membre quand il quitte le serveur."""
+    await db.delete_profile(member.id)
+    print(f"Profil supprimé pour {member.name} (ID:{member.id}) — a quitté le serveur")
+ 
 # --------------------------------------------------------------------------
 # INSCRIPTION
 # --------------------------------------------------------------------------
