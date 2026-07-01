@@ -1277,8 +1277,20 @@ async def envoyer_jeu():
                 description=jeu,
                 color=0x2ECC71
             )
-            embed.set_footer(text=f"Réponse : {reponse}")
-            await salon.send(embed=embed)
+            if type_jeu not in ("ce ou cela", "complète la phrase"):
+                embed.set_footer(text=f"Réponse : {reponse}")
+            else:
+                embed.set_footer(text="Réponds avec une réaction ou dans le fil ! 👇")
+            msg = await salon.send(embed=embed)
+            if type_jeu == "ce ou cela":
+                await msg.add_reaction("1️⃣")
+                await msg.add_reaction("2️⃣")
+            elif type_jeu == "complète la phrase":
+                await msg.add_reaction("💬")
+            elif type_jeu == "devinette":
+                await msg.add_reaction("🤔")
+            elif type_jeu == "culture générale":
+                await msg.add_reaction("🧠")
         except Exception as e:
             print(f"Erreur génération jeu : {e}")
 
@@ -1310,8 +1322,20 @@ async def test_jeu(interaction: discord.Interaction):
         jeu = lines[1].replace("JEU:", "").strip()
         reponse = lines[2].replace("REPONSE:", "").strip()
         embed = discord.Embed(title=titre, description=jeu, color=0x2ECC71)
-        embed.set_footer(text=f"Réponse : {reponse}")
-        await salon.send(embed=embed)
+        if type_jeu not in ("ce ou cela", "complète la phrase"):
+            embed.set_footer(text=f"Réponse : {reponse}")
+        else:
+            embed.set_footer(text="Réponds avec une réaction ou dans le fil ! 👇")
+        msg = await salon.send(embed=embed)
+        if type_jeu == "ce ou cela":
+            await msg.add_reaction("1️⃣")
+            await msg.add_reaction("2️⃣")
+        elif type_jeu == "complète la phrase":
+            await msg.add_reaction("💬")
+        elif type_jeu == "devinette":
+            await msg.add_reaction("🤔")
+        elif type_jeu == "culture générale":
+            await msg.add_reaction("🧠")
         await interaction.followup.send("Jeu envoyé !", ephemeral=True)
     except Exception as e:
         await interaction.followup.send(f"Erreur : {e}", ephemeral=True)
