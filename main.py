@@ -829,6 +829,97 @@ async def test_citation(interaction: discord.Interaction):
     await envoyer_citation()
     await interaction.followup.send("Citation envoyée !", ephemeral=True)
 
+
+# --------------------------------------------------------------------------
+# QUESTION DU JOUR VIA API CLAUDE
+# --------------------------------------------------------------------------
+
+SALON_QUESTIONS = "❓question-du-jour"
+
+
+async def generer_question():
+    """Génère une question du jour sur les rencontres et la personnalité via Claude."""
+    import aiohttp
+    import random
+
+    themes = [
+        "les valeurs en amour", "la compatibilité dans un couple",
+        "les premiers rendez-vous", "ce qui attire vraiment dans quelqu'un",
+        "la différence entre amour et amitié", "les deal-breakers en relation",
+        "la communication dans un couple", "les habitudes de vie en couple",
+        "les rêves et ambitions en amour", "la jalousie et la confiance",
+        "les langages de l'amour", "ce qu'on apprend de ses relations passées",
+        "l'importance des centres d'intérêt communs", "la distance en amour",
+        "le bon moment pour se mettre en couple"
+    ]
+    theme = random.choice(themes)
+
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+    payload = {
+        "model": "claude-haiku-4-5",
+        "max_tokens": 200,
+        "messages": [{
+            "role": "user",
+            "content": f"Génère une question du jour originale sur le thème : {theme}. "
+                      f"La question doit être courte, intrigante, et inviter les gens à débattre ou réfléchir. "
+                      f"Elle doit être adaptée à une communauté de rencontre. "
+                      f"Réponds UNIQUEMENT avec la question, sans aucun autre texte ni explication."
+        }]
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            return data["content"][0]["text"].strip()
+
+
+@tasks.loop(hours=24)
+async def envoyer_question():
+    """Envoie une question du jour une fois par jour."""
+    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+    if not guild:
+        return
+
+    salon = discord.utils.get(guild.text_channels, name=SALON_QUESTIONS)
+    if not salon:
+        return
+
+    try:
+        question = await generer_question()
+        embed = discord.Embed(
+            title="❓ Question du jour",
+            description=question,
+            color=0x3498DB
+        )
+        embed.set_footer(text="Réponds dans #💬discussions et partage ton avis ! 💬")
+        await salon.send(embed=embed)
+    except Exception as e:
+        print(f"Erreur génération question : {e}")
+
+
+@envoyer_question.before_loop
+async def before_envoyer_question():
+    await bot.wait_until_ready()
+
+
+@bot.tree.command(name="test-question", description="[ADMIN] Forcer l'envoi d'une question maintenant")
+async def test_question(interaction: discord.Interaction):
+    fondateur = discord.utils.get(interaction.guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+    await interaction.response.send_message("Génération de la question...", ephemeral=True)
+    await envoyer_question()
+    await interaction.followup.send("Question envoyée !", ephemeral=True)
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
@@ -855,6 +946,8 @@ async def on_ready():
         send_daily_suggestions.start()
     if not envoyer_citation.is_running():
         envoyer_citation.start()
+    if not envoyer_question.is_running():
+        envoyer_question.start()
 
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
