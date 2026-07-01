@@ -17,6 +17,7 @@ ROLE_NOUVEAU = "👤 Nouveau"
 ROLE_MEMBRE = "❤️ Membre vérifié"
 SALON_SIGNALEMENTS = "🚨signalements"
 SALON_SIGNALER = "🚨signaler"
+ROLE_FONDATEUR = "👑 Fondateur"
  
 intents = discord.Intents.default()
 intents.members = True
@@ -433,6 +434,10 @@ async def create_match_channels(user1_id: int, user2_id: int):
     member2 = guild.get_member(user2_id)
  
     # Permissions strictes : seuls les deux membres et le bot ont accès
+    # L'owner est explicitement bloqué sur son compte personnel
+    OWNER_ID = 364449220461199370
+    owner = guild.get_member(OWNER_ID)
+ 
     overwrites1 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
         guild.me: discord.PermissionOverwrite(
@@ -444,6 +449,8 @@ async def create_match_channels(user1_id: int, user2_id: int):
         overwrites1[member1] = discord.PermissionOverwrite(
             view_channel=True, send_messages=True, read_message_history=True
         )
+    if owner and owner != member1:
+        overwrites1[owner] = discord.PermissionOverwrite(view_channel=False)
  
     overwrites2 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
@@ -456,6 +463,8 @@ async def create_match_channels(user1_id: int, user2_id: int):
         overwrites2[member2] = discord.PermissionOverwrite(
             view_channel=True, send_messages=True, read_message_history=True
         )
+    if owner and owner != member2:
+        overwrites2[owner] = discord.PermissionOverwrite(view_channel=False)
  
     channel1 = await guild.create_text_channel(
         f"match-{match_id}-a", category=category, overwrites=overwrites1
@@ -568,6 +577,52 @@ async def on_reveal_decline(interaction: discord.Interaction, match_id: int, sid
     )
  
  
+ 
+ 
+@bot.tree.command(name="voir-match", description="[ADMIN] Accéder temporairement à un salon de match")
+@app_commands.describe(salon="Le salon de match à consulter")
+async def voir_match(interaction: discord.Interaction, salon: discord.TextChannel):
+    guild = interaction.guild
+    fondateur = discord.utils.get(guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message(
+            "Tu n'as pas la permission d'utiliser cette commande.", ephemeral=True
+        )
+        return
+ 
+    # Vérifier que c'est bien un salon de match
+    match = await db.get_match_by_channel(salon.id)
+    if not match:
+        await interaction.response.send_message(
+            "Ce salon n'est pas un salon de match.", ephemeral=True
+        )
+        return
+ 
+    # Donner accès temporaire
+    await salon.set_permissions(interaction.user, view_channel=True, send_messages=False, read_message_history=True)
+    await interaction.response.send_message(
+        f"Tu as maintenant accès en lecture à {salon.mention}. Utilise `/quitter-match` pour en sortir.",
+        ephemeral=True
+    )
+ 
+ 
+@bot.tree.command(name="quitter-match", description="[ADMIN] Quitter un salon de match consulté")
+@app_commands.describe(salon="Le salon de match à quitter")
+async def quitter_match(interaction: discord.Interaction, salon: discord.TextChannel):
+    guild = interaction.guild
+    fondateur = discord.utils.get(guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message(
+            "Tu n'as pas la permission d'utiliser cette commande.", ephemeral=True
+        )
+        return
+ 
+    # Retirer l'accès
+    await salon.set_permissions(interaction.user, view_channel=False)
+    await interaction.response.send_message(
+        f"Tu n'as plus accès à {salon.mention}.",
+        ephemeral=True
+    )
  
 # --------------------------------------------------------------------------
 # COMMANDE DE TEST (ADMIN UNIQUEMENT)
