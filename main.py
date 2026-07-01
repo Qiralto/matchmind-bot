@@ -422,20 +422,29 @@ async def create_match_channels(user1_id: int, user2_id: int):
     member2 = guild.get_member(user2_id)
  
     # Permissions strictes : seuls les deux membres et le bot ont accès
-    # @everyone est bloqué, donc tous les rôles héritent de ce blocage
     overwrites1 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_webhooks=True),
+        guild.me: discord.PermissionOverwrite(
+            view_channel=True, send_messages=True,
+            read_message_history=True, manage_webhooks=True
+        ),
     }
     if member1:
-        overwrites1[member1] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        overwrites1[member1] = discord.PermissionOverwrite(
+            view_channel=True, send_messages=True, read_message_history=True
+        )
  
     overwrites2 = {
         guild.default_role: discord.PermissionOverwrite(view_channel=False),
-        guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, manage_webhooks=True),
+        guild.me: discord.PermissionOverwrite(
+            view_channel=True, send_messages=True,
+            read_message_history=True, manage_webhooks=True
+        ),
     }
     if member2:
-        overwrites2[member2] = discord.PermissionOverwrite(view_channel=True, send_messages=True)
+        overwrites2[member2] = discord.PermissionOverwrite(
+            view_channel=True, send_messages=True, read_message_history=True
+        )
  
     channel1 = await guild.create_text_channel(
         f"match-{match_id}-a", category=category, overwrites=overwrites1
