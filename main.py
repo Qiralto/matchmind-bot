@@ -842,6 +842,96 @@ async def post_temoignage_button(guild: discord.Guild):
     )
     await salon.send(embed=embed, view=TemoignageView())
 
+
+# --------------------------------------------------------------------------
+# SYSTÈME DE SUGGESTIONS PREMIUM
+# --------------------------------------------------------------------------
+
+SALON_SUGGESTIONS = "💡suggestions-vip"
+SALON_SUGGESTIONS_RECUES = "📋suggestions-reçues"
+ROLE_PREMIUM = "💎 Premium"
+
+
+class SuggestionModal(ui.Modal, title="Faire une suggestion"):
+    suggestion = ui.TextInput(
+        label="Ta suggestion",
+        style=discord.TextStyle.paragraph,
+        placeholder="Décris ton idée pour améliorer MatchMind...",
+        max_length=500,
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        role_premium = discord.utils.get(guild.roles, name=ROLE_PREMIUM)
+        if not role_premium or role_premium not in interaction.user.roles:
+            await interaction.response.send_message(
+                "Ce salon est réservé aux membres Premium.",
+                ephemeral=True
+            )
+            return
+
+        salon_recues = discord.utils.get(guild.text_channels, name="suggestions-reçues")
+        if not salon_recues:
+            for ch in guild.text_channels:
+                if "suggestion" in ch.name.lower() and "re" in ch.name.lower():
+                    salon_recues = ch
+                    break
+
+        if not salon_recues:
+            await interaction.response.send_message(
+                "Erreur lors de l'envoi de la suggestion.", ephemeral=True
+            )
+            return
+
+        embed = discord.Embed(
+            title="💡 Nouvelle suggestion Premium",
+            description=self.suggestion.value,
+            color=0x9B59B6
+        )
+        embed.set_footer(text=f"Par {interaction.user.display_name} (ID:{interaction.user.id}) — {discord.utils.utcnow().strftime('%d/%m/%Y à %H:%M')}")
+        await salon_recues.send(embed=embed)
+
+        await interaction.response.send_message(
+            "Ta suggestion a bien été transmise à l'équipe MatchMind, merci ! 💎",
+            ephemeral=True
+        )
+
+
+class SuggestionView(ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @ui.button(
+        label="💡 Faire une suggestion",
+        style=discord.ButtonStyle.primary,
+        custom_id="btn_suggestion"
+    )
+    async def suggerer(self, interaction: discord.Interaction, button: ui.Button):
+        await interaction.response.send_modal(SuggestionModal())
+
+
+async def post_suggestion_button(guild: discord.Guild):
+    """Poste le message avec le bouton dans #suggestions-vip au démarrage."""
+    salon = discord.utils.get(guild.text_channels, name=SALON_SUGGESTIONS)
+    if not salon:
+        return
+
+    async for message in salon.history(limit=20):
+        if message.author == guild.me and message.components:
+            return
+
+    embed = discord.Embed(
+        title="💡 Suggestions Premium",
+        description=(
+            "Tu as une idée pour améliorer MatchMind ?\n"
+            "Une nouvelle fonctionnalité, une amélioration du bot, une idée d'animation ?\n\n"
+            "En tant que membre **Premium**, ton avis compte vraiment !\n"
+            "Clique sur le bouton ci-dessous pour partager ta suggestion. 💎"
+        ),
+        color=0x9B59B6
+    )
+    await salon.send(embed=embed, view=SuggestionView())
+
 # --------------------------------------------------------------------------
 # COMMANDE DE TEST (ADMIN UNIQUEMENT)
 # --------------------------------------------------------------------------
@@ -1450,6 +1540,7 @@ async def on_ready():
     bot.add_view(FermerMatchView(0))
     bot.add_view(MatchActionsView(0))
     bot.add_view(TemoignageView())
+    bot.add_view(SuggestionView())
     try:
         if GUILD_ID:
             guild_obj = discord.Object(id=GUILD_ID)
@@ -1478,6 +1569,7 @@ async def on_ready():
     if guild:
         await post_signalement_button(guild)
         await post_temoignage_button(guild)
+        await post_suggestion_button(guild)
 
     print(f"Connecté en tant que {bot.user}")
 
