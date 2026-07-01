@@ -849,7 +849,7 @@ async def post_temoignage_button(guild: discord.Guild):
 
 SALON_SUGGESTIONS = "💡suggestions-vip"
 SALON_SUGGESTIONS_RECUES = "📋suggestions-reçues"
-ROLE_PREMIUM = "💎 Premium"
+ROLE_PREMIUM = "💎Premium"
 
 
 class SuggestionModal(ui.Modal, title="Faire une suggestion"):
