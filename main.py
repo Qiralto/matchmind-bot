@@ -910,6 +910,45 @@ class SuggestionView(ui.View):
         await interaction.response.send_modal(SuggestionModal())
 
 
+
+async def post_avantages_premium(guild: discord.Guild):
+    """Poste le message des avantages Premium au démarrage."""
+    salon = None
+    for ch in guild.text_channels:
+        if "avantage" in ch.name.lower():
+            salon = ch
+            break
+    if not salon:
+        return
+
+    async for message in salon.history(limit=10):
+        if message.author == guild.me:
+            return
+
+    embed = discord.Embed(
+        title="💎 Avantages Premium",
+        description=(
+            "En devenant membre **Premium** sur MatchMind, tu accèdes à des avantages exclusifs !\n\n"
+            "**🚀 Matching amélioré**\n"
+            "Reçois plus de suggestions de profils compatibles chaque jour.\n\n"
+            "**💬 Lounge exclusif**\n"
+            "Accès à un salon de discussion privé réservé aux membres Premium.\n\n"
+            "**🎙️ Vocal VIP**\n"
+            "Un salon vocal exclusif pour les membres Premium.\n\n"
+            "**💡 Suggestions prioritaires**\n"
+            "Propose des idées pour améliorer MatchMind, ton avis compte vraiment !\n\n"
+            "**🌟 Rôle exclusif**\n"
+            "Un rôle visible sur le serveur qui te distingue des autres membres.\n\n"
+            "**🔔 Accès anticipé**\n"
+            "Tu seras le premier informé des nouvelles fonctionnalités de MatchMind.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "Pour devenir Premium, contacte un modérateur ! 💌"
+        ),
+        color=0x9B59B6
+    )
+    embed.set_footer(text="MatchMind Premium — Trouve quelqu'un qui te ressemble vraiment 💘")
+    await salon.send(embed=embed)
+
 async def post_suggestion_button(guild: discord.Guild):
     """Poste le message avec le bouton dans #suggestions-vip au démarrage."""
     salon = discord.utils.get(guild.text_channels, name=SALON_SUGGESTIONS)
@@ -1570,6 +1609,7 @@ async def on_ready():
         await post_signalement_button(guild)
         await post_temoignage_button(guild)
         await post_suggestion_button(guild)
+        await post_avantages_premium(guild)
 
     print(f"Connecté en tant que {bot.user}")
 
