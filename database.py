@@ -3,14 +3,14 @@ import os
 import json
 import time
 import asyncpg
- 
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
- 
- 
+
+
 async def get_conn():
     return await asyncpg.connect(DATABASE_URL)
- 
- 
+
+
 async def init_db():
     conn = await get_conn()
     try:
@@ -65,8 +65,8 @@ async def init_db():
         """)
     finally:
         await conn.close()
- 
- 
+
+
 async def upsert_profile(user_id, **fields):
     fields["interests"] = json.dumps(fields.get("interests", []), ensure_ascii=False)
     fields["user_id"] = user_id
@@ -83,8 +83,8 @@ async def upsert_profile(user_id, **fields):
         )
     finally:
         await conn.close()
- 
- 
+
+
 async def get_profile(user_id):
     conn = await get_conn()
     try:
@@ -96,8 +96,8 @@ async def get_profile(user_id):
         return None
     finally:
         await conn.close()
- 
- 
+
+
 async def get_all_active_profiles(exclude_user_id=None):
     conn = await get_conn()
     try:
@@ -113,8 +113,8 @@ async def get_all_active_profiles(exclude_user_id=None):
         return results
     finally:
         await conn.close()
- 
- 
+
+
 async def mark_seen(user_id, shown_user_id):
     conn = await get_conn()
     try:
@@ -124,8 +124,8 @@ async def mark_seen(user_id, shown_user_id):
         )
     finally:
         await conn.close()
- 
- 
+
+
 async def get_seen_ids(user_id):
     conn = await get_conn()
     try:
@@ -133,8 +133,8 @@ async def get_seen_ids(user_id):
         return {r["shown_user_id"] for r in rows}
     finally:
         await conn.close()
- 
- 
+
+
 async def add_like(liker_id, liked_id):
     conn = await get_conn()
     try:
@@ -144,8 +144,8 @@ async def add_like(liker_id, liked_id):
         )
     finally:
         await conn.close()
- 
- 
+
+
 async def has_liked(liker_id, liked_id):
     conn = await get_conn()
     try:
@@ -155,8 +155,8 @@ async def has_liked(liker_id, liked_id):
         return row is not None
     finally:
         await conn.close()
- 
- 
+
+
 async def create_match(user1_id, user2_id):
     conn = await get_conn()
     try:
@@ -167,8 +167,8 @@ async def create_match(user1_id, user2_id):
         return row["match_id"]
     finally:
         await conn.close()
- 
- 
+
+
 async def set_match_channels(match_id, channel1_id, channel2_id, webhook1_url, webhook2_url):
     conn = await get_conn()
     try:
@@ -178,8 +178,8 @@ async def set_match_channels(match_id, channel1_id, channel2_id, webhook1_url, w
         )
     finally:
         await conn.close()
- 
- 
+
+
 async def get_match_by_channel(channel_id):
     conn = await get_conn()
     try:
@@ -190,8 +190,8 @@ async def get_match_by_channel(channel_id):
         return dict(row) if row else None
     finally:
         await conn.close()
- 
- 
+
+
 async def increment_message_count(match_id, side):
     col = "count1" if side == 1 else "count2"
     conn = await get_conn()
@@ -199,8 +199,8 @@ async def increment_message_count(match_id, side):
         await conn.execute(f"UPDATE matches SET {col} = {col} + 1 WHERE match_id = $1", match_id)
     finally:
         await conn.close()
- 
- 
+
+
 async def set_reveal_agree(match_id, side):
     col = "reveal_agree1" if side == 1 else "reveal_agree2"
     conn = await get_conn()
@@ -208,16 +208,16 @@ async def set_reveal_agree(match_id, side):
         await conn.execute(f"UPDATE matches SET {col} = 1 WHERE match_id = $1", match_id)
     finally:
         await conn.close()
- 
- 
+
+
 async def set_revealed(match_id):
     conn = await get_conn()
     try:
         await conn.execute("UPDATE matches SET revealed = 1 WHERE match_id = $1", match_id)
     finally:
         await conn.close()
- 
- 
+
+
 async def get_existing_match(user1_id, user2_id):
     conn = await get_conn()
     try:
@@ -228,8 +228,8 @@ async def get_existing_match(user1_id, user2_id):
         return dict(row) if row else None
     finally:
         await conn.close()
- 
- 
+
+
 async def has_been_liked_by_anyone_unseen(user_id):
     conn = await get_conn()
     try:
@@ -237,12 +237,69 @@ async def has_been_liked_by_anyone_unseen(user_id):
         return row[0] > 0
     finally:
         await conn.close()
- 
+
 async def delete_profile(user_id):
     conn = await get_conn()
     try:
         await conn.execute("DELETE FROM profiles WHERE user_id = $1", user_id)
         await conn.execute("DELETE FROM likes WHERE liker_id = $1 OR liked_id = $1", user_id)
         await conn.execute("DELETE FROM seen WHERE user_id = $1 OR shown_user_id = $1", user_id)
+    finally:
+        await conn.close()
+
+
+async def add_warning(user_id: int, reason: str, moderator_id: int):
+    conn = await get_conn()
+    try:
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS warnings ("
+            "id SERIAL PRIMARY KEY, "
+            "user_id BIGINT, "
+            "reason TEXT, "
+            "moderator_id BIGINT, "
+            "created_at BIGINT)"
+        )
+        await conn.execute(
+            "INSERT INTO warnings (user_id, reason, moderator_id, created_at) VALUES ($1, $2, $3, $4)",
+            user_id, reason, moderator_id, int(__import__('time').time())
+        )
+    finally:
+        await conn.close()
+
+
+async def get_warnings(user_id: int):
+    conn = await get_conn()
+    try:
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS warnings ("
+            "id SERIAL PRIMARY KEY, "
+            "user_id BIGINT, "
+            "reason TEXT, "
+            "moderator_id BIGINT, "
+            "created_at BIGINT)"
+        )
+        rows = await conn.fetch("SELECT * FROM warnings WHERE user_id = $1 ORDER BY created_at DESC", user_id)
+        return [dict(r) for r in rows]
+    finally:
+        await conn.close()
+
+
+async def remove_last_warning(user_id: int):
+    conn = await get_conn()
+    try:
+        await conn.execute(
+            "DELETE FROM warnings WHERE id = ("
+            "SELECT id FROM warnings WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1)",
+            user_id
+        )
+    finally:
+        await conn.close()
+
+
+async def count_warnings(user_id: int):
+    conn = await get_conn()
+    try:
+        row = await conn.fetchrow("SELECT COUNT(*) FROM warnings WHERE user_id = $1", user_id)
+        return row[0]
     finally:
         await conn.close()
