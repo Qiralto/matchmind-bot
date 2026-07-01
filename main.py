@@ -143,14 +143,29 @@ class SignalementModal(ui.Modal, title="Signalement"):
                     label1 = f"User ID:{match['user1_id']}"
                     label2 = f"User ID:{match['user2_id']}"
  
-                messages = []
-                async for msg in interaction.channel.history(limit=50, oldest_first=True):
-                    if not msg.author.bot:
-                        label = label1 if interaction.channel.id == match["channel1_id"] else label2
-                        messages.append(f"[{msg.created_at.strftime('%H:%M')}] {label} : {msg.content}")
-                    else:
-                        if msg.content and not msg.content.startswith("🎉") and "Signaler" not in msg.content:
-                            messages.append(f"[{msg.created_at.strftime('%H:%M')}] [Relayé] : {msg.content}")
+                # Lire les deux salons et combiner dans l'ordre chronologique
+                all_messages = []
+                guild_obj = interaction.guild
+ 
+                channel1_obj = guild_obj.get_channel(match["channel1_id"])
+                channel2_obj = guild_obj.get_channel(match["channel2_id"])
+ 
+                if channel1_obj:
+                    async for msg in channel1_obj.history(limit=50, oldest_first=True):
+                        if not msg.author.bot:
+                            # Message réel de la personne A dans son salon
+                            all_messages.append((msg.created_at, f"[{msg.created_at.strftime('%H:%M')}] {label1} : {msg.content}"))
+                        elif msg.webhook_id and msg.content and not msg.content.startswith("🎉"):
+                            # Message relayé depuis le salon B = vient de la personne B
+                            all_messages.append((msg.created_at, f"[{msg.created_at.strftime('%H:%M')}] {label2} : {msg.content}"))
+                if channel2_obj:
+                    async for msg in channel2_obj.history(limit=50, oldest_first=True):
+                        if not msg.author.bot and not msg.webhook_id:
+                            # Message réel de la personne B dans son salon
+                            all_messages.append((msg.created_at, f"[{msg.created_at.strftime('%H:%M')}] {label2} : {msg.content}"))
+ 
+                all_messages.sort(key=lambda x: x[0])
+                messages = [m[1] for m in all_messages]
  
                 if messages:
                     transcript = "\n".join(messages)
