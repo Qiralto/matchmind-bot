@@ -675,7 +675,8 @@ async def on_reveal_accept(interaction: discord.Interaction, match_id: int, side
 
 async def on_reveal_decline(interaction: discord.Interaction, match_id: int, side: int):
     await interaction.response.send_message(
-        "Pas de souci, vous restez anonymes pour l'instant.", ephemeral=True
+        "Pas de souci, vous restez anonymes pour l'instant. La question vous sera reposée après 20 nouveaux messages 💌",
+        ephemeral=True
     )
     # Supprimer le message et réactiver les messages
     await delete_reveal_message(interaction.channel)
@@ -684,6 +685,21 @@ async def on_reveal_decline(interaction: discord.Interaction, match_id: int, sid
         guild = interaction.guild
         user_id = match["user1_id"] if interaction.channel.id == match["channel1_id"] else match["user2_id"]
         await restore_send_messages(interaction.channel, user_id)
+
+        # Remettre les compteurs à zéro pour reposer la question après 20 messages
+        conn = None
+        try:
+            import asyncpg
+            conn = await asyncpg.connect(os.environ.get("DATABASE_URL"))
+            await conn.execute(
+                "UPDATE matches SET count1 = 0, count2 = 0, reveal_agree1 = 0, reveal_agree2 = 0 WHERE match_id = $1",
+                match_id
+            )
+        except Exception as e:
+            print(f"Erreur reset compteurs : {e}")
+        finally:
+            if conn:
+                await conn.close()
 
 
 
