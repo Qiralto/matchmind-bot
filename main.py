@@ -818,6 +818,17 @@ async def envoyer_citation():
 async def before_envoyer_citation():
     await bot.wait_until_ready()
 
+
+@bot.tree.command(name="test-citation", description="[ADMIN] Forcer l'envoi d'une citation maintenant")
+async def test_citation(interaction: discord.Interaction):
+    fondateur = discord.utils.get(interaction.guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+    await interaction.response.send_message("Génération de la citation...", ephemeral=True)
+    await envoyer_citation()
+    await interaction.followup.send("Citation envoyée !", ephemeral=True)
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
