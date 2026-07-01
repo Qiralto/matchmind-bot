@@ -960,6 +960,107 @@ async def test_question(interaction: discord.Interaction):
     await envoyer_question()
     await interaction.followup.send("Question envoyée !", ephemeral=True)
 
+
+# --------------------------------------------------------------------------
+# SONDAGE HEBDOMADAIRE VIA API CLAUDE
+# --------------------------------------------------------------------------
+
+SALON_SONDAGES = "📊sondages"
+
+
+async def generer_sondage():
+    """Génère un sondage hebdomadaire via Claude."""
+    import aiohttp
+    import random
+
+    themes = [
+        "les rencontres amoureuses", "la personnalité et le caractère",
+        "les habitudes de vie en couple", "ce qui attire dans quelqu'un",
+        "les premiers rendez-vous", "l'amour et l'amitié",
+        "les centres d'intérêt communs", "la communication en couple"
+    ]
+    theme = random.choice(themes)
+
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+    payload = {
+        "model": "claude-haiku-4-5",
+        "max_tokens": 150,
+        "messages": [{
+            "role": "user",
+            "content": f"Génère un sondage fun et court sur le thème : {theme}. "
+                      f"Format EXACT à respecter (rien d'autre) :\n"
+                      f"QUESTION: [la question]\n"
+                      f"OPTION1: [emoji] [option 1]\n"
+                      f"OPTION2: [emoji] [option 2]\n"
+                      f"La question doit inviter au débat, les options doivent être courtes et opposées."
+        }]
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            return data["content"][0]["text"].strip()
+
+
+@tasks.loop(minutes=1)
+async def envoyer_sondage():
+    """Envoie un sondage chaque lundi à 12h (heure de Paris)."""
+    from datetime import datetime, timezone, timedelta
+    paris = timezone(timedelta(hours=2))
+    now = datetime.now(paris)
+    if now.weekday() == 0 and now.hour == 12 and now.minute == 0:
+        guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+        if not guild:
+            return
+        salon = discord.utils.get(guild.text_channels, name=SALON_SONDAGES)
+        if not salon:
+            return
+        try:
+            raw = await generer_sondage()
+            lines = raw.strip().split("\n")
+            question = lines[0].replace("QUESTION:", "").strip()
+            option1 = lines[1].replace("OPTION1:", "").strip()
+            option2 = lines[2].replace("OPTION2:", "").strip()
+
+            embed = discord.Embed(
+                title="📊 Sondage de la semaine",
+                description=f"**{question}**\n\n{option1}\n{option2}",
+                color=0x9B59B6
+            )
+            embed.set_footer(text="Vote avec les réactions ci-dessous ! 👇")
+            msg = await salon.send(embed=embed)
+
+            emoji1 = option1.split()[0]
+            emoji2 = option2.split()[0]
+            await msg.add_reaction(emoji1)
+            await msg.add_reaction(emoji2)
+        except Exception as e:
+            print(f"Erreur génération sondage : {e}")
+
+
+@envoyer_sondage.before_loop
+async def before_envoyer_sondage():
+    await bot.wait_until_ready()
+
+
+@bot.tree.command(name="test-sondage", description="[ADMIN] Forcer l'envoi d'un sondage maintenant")
+async def test_sondage(interaction: discord.Interaction):
+    fondateur = discord.utils.get(interaction.guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+    await interaction.response.send_message("Génération du sondage...", ephemeral=True)
+    await envoyer_sondage()
+    await interaction.followup.send("Sondage envoyé !", ephemeral=True)
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
@@ -988,6 +1089,8 @@ async def on_ready():
         envoyer_citation.start()
     if not envoyer_question.is_running():
         envoyer_question.start()
+    if not envoyer_sondage.is_running():
+        envoyer_sondage.start()
 
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
