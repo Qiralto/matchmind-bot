@@ -1058,8 +1058,31 @@ async def test_sondage(interaction: discord.Interaction):
         await interaction.response.send_message("Permission refusée.", ephemeral=True)
         return
     await interaction.response.send_message("Génération du sondage...", ephemeral=True)
-    await envoyer_sondage()
-    await interaction.followup.send("Sondage envoyé !", ephemeral=True)
+    guild = interaction.guild
+    salon = discord.utils.get(guild.text_channels, name=SALON_SONDAGES)
+    if not salon:
+        await interaction.followup.send("Salon sondages introuvable.", ephemeral=True)
+        return
+    try:
+        raw = await generer_sondage()
+        lines = raw.strip().split("\n")
+        question = lines[0].replace("QUESTION:", "").strip()
+        option1 = lines[1].replace("OPTION1:", "").strip()
+        option2 = lines[2].replace("OPTION2:", "").strip()
+        embed = discord.Embed(
+            title="📊 Sondage de la semaine",
+            description=f"**{question}**\n\n{option1}\n{option2}",
+            color=0x9B59B6
+        )
+        embed.set_footer(text="Vote avec les réactions ci-dessous ! 👇")
+        msg = await salon.send(embed=embed)
+        emoji1 = option1.split()[0]
+        emoji2 = option2.split()[0]
+        await msg.add_reaction(emoji1)
+        await msg.add_reaction(emoji2)
+        await interaction.followup.send("Sondage envoyé !", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Erreur : {e}", ephemeral=True)
 
 # --------------------------------------------------------------------------
 # DÉMARRAGE
