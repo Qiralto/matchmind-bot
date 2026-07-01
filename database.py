@@ -237,3 +237,12 @@ async def has_been_liked_by_anyone_unseen(user_id):
         return row[0] > 0
     finally:
         await conn.close()
+ 
+async def delete_profile(user_id):
+    conn = await get_conn()
+    try:
+        await conn.execute("DELETE FROM profiles WHERE user_id = $1", user_id)
+        await conn.execute("DELETE FROM likes WHERE liker_id = $1 OR liked_id = $1", user_id)
+        await conn.execute("DELETE FROM seen WHERE user_id = $1 OR shown_user_id = $1", user_id)
+    finally:
+        await conn.close()
