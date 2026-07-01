@@ -2072,6 +2072,234 @@ async def supprimer_vocal_quand_vide(channel: discord.VoiceChannel):
             print(f"Erreur suppression vocal : {e}")
             break
 
+
+# --------------------------------------------------------------------------
+# COMMANDES PROFIL MEMBRES
+# --------------------------------------------------------------------------
+
+@bot.tree.command(name="mon-profil", description="Voir ton profil tel qu'il apparaît aux autres")
+async def mon_profil(interaction: discord.Interaction):
+    profile = await db.get_profile(interaction.user.id)
+    if not profile:
+        await interaction.response.send_message(
+            "Tu n'as pas encore de profil ! Tape `/inscription` pour en créer un.",
+            ephemeral=True
+        )
+        return
+    embed = views.build_profile_embed(profile)
+    embed.title = f"👤 Ton profil — {profile['prenom']}, {profile['age']} ans"
+    embed.set_footer(text="C'est ainsi que tu apparais aux autres membres 💘")
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="modifier-profil", description="Modifier une information de ton profil")
+@app_commands.describe(
+    champ="L'information à modifier",
+    valeur="La nouvelle valeur"
+)
+@app_commands.choices(champ=[
+    app_commands.Choice(name="Prénom", value="prenom"),
+    app_commands.Choice(name="Âge", value="age"),
+    app_commands.Choice(name="Localisation", value="localisation"),
+    app_commands.Choice(name="Description", value="description"),
+    app_commands.Choice(name="Ice breaker", value="icebreaker"),
+    app_commands.Choice(name="Type de relation", value="relation_type"),
+])
+async def modifier_profil(interaction: discord.Interaction, champ: str, valeur: str):
+    profile = await db.get_profile(interaction.user.id)
+    if not profile:
+        await interaction.response.send_message(
+            "Tu n'as pas encore de profil ! Tape `/inscription` pour en créer un.",
+            ephemeral=True
+        )
+        return
+
+    if champ == "age":
+        try:
+            valeur_int = int(valeur)
+            if valeur_int < 18:
+                await interaction.response.send_message(
+                    "L'âge minimum est 18 ans.", ephemeral=True
+                )
+                return
+            await db.upsert_profile(interaction.user.id, **{**profile, "age": valeur_int})
+        except ValueError:
+            await interaction.response.send_message("L'âge doit être un nombre.", ephemeral=True)
+            return
+    else:
+        await db.upsert_profile(interaction.user.id, **{**profile, champ: valeur})
+
+    await interaction.response.send_message(
+        f"✅ Ton **{champ}** a été mis à jour avec succès !",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="pause", description="Mettre ton profil en pause temporaire")
+async def pause_profil(interaction: discord.Interaction):
+    profile = await db.get_profile(interaction.user.id)
+    if not profile:
+        await interaction.response.send_message(
+            "Tu n'as pas encore de profil !", ephemeral=True
+        )
+        return
+    if profile["active"] == 0:
+        await interaction.response.send_message(
+            "Ton profil est déjà en pause. Tape `/reprendre` pour le réactiver.",
+            ephemeral=True
+        )
+        return
+    await db.upsert_profile(interaction.user.id, **{**profile, "active": 0})
+    await interaction.response.send_message(
+        "⏸️ Ton profil est maintenant en pause. Tu ne recevras plus de suggestions "
+        "et tu n'apparaîtras plus dans celles des autres.\n"
+        "Tape `/reprendre` quand tu veux revenir ! 💘",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="reprendre", description="Réactiver ton profil après une pause")
+async def reprendre_profil(interaction: discord.Interaction):
+    profile = await db.get_profile(interaction.user.id)
+    if not profile:
+        await interaction.response.send_message(
+            "Tu n'as pas encore de profil !", ephemeral=True
+        )
+        return
+    if profile["active"] == 1:
+        await interaction.response.send_message(
+            "Ton profil est déjà actif !", ephemeral=True
+        )
+        return
+    await db.upsert_profile(interaction.user.id, **{**profile, "active": 1})
+    await interaction.response.send_message(
+        "▶️ Ton profil est de nouveau actif ! Tu vas recevoir des suggestions "
+        "de profils compatibles très bientôt 💘",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="stats", description="[ADMIN] Voir les statistiques du serveur")
+async def stats(interaction: discord.Interaction):
+    fondateur = discord.utils.get(interaction.guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    conn = None
+    try:
+        import asyncpg
+        conn = await asyncpg.connect(os.environ.get("DATABASE_URL"))
+        total_profiles = await conn.fetchval("SELECT COUNT(*) FROM profiles WHERE active = 1")
+        total_matches = await conn.fetchval("SELECT COUNT(*) FROM matches")
+        total_revealed = await conn.fetchval("SELECT COUNT(*) FROM matches WHERE revealed = 1")
+        total_likes = await conn.fetchval("SELECT COUNT(*) FROM likes")
+        total_warnings = await conn.fetchval("SELECT COUNT(*) FROM warnings") if await conn.fetchval("SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'warnings')") else 0
+    finally:
+        if conn:
+            await conn.close()
+
+    embed = discord.Embed(
+        title="📊 Statistiques MatchMind",
+        color=0x9B59B6
+    )
+    embed.add_field(name="👥 Membres inscrits", value=str(total_profiles), inline=True)
+    embed.add_field(name="💘 Matchs créés", value=str(total_matches), inline=True)
+    embed.add_field(name="🔓 Matchs révélés", value=str(total_revealed), inline=True)
+    embed.add_field(name="❤️ Total de likes", value=str(total_likes), inline=True)
+    embed.add_field(name="⚠️ Avertissements", value=str(total_warnings), inline=True)
+    embed.add_field(name="🏠 Membres Discord", value=str(interaction.guild.member_count), inline=True)
+    embed.set_footer(text=f"MatchMind — {discord.utils.utcnow().strftime('%d/%m/%Y à %H:%M')}")
+    await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="signaler-bug", description="Signaler un bug ou un problème technique")
+async def signaler_bug(interaction: discord.Interaction):
+    class BugModal(discord.ui.Modal, title="Signaler un bug"):
+        description_bug = discord.ui.TextInput(
+            label="Décris le bug",
+            style=discord.TextStyle.paragraph,
+            placeholder="Que s'est-il passé ? Quelle commande as-tu utilisée ?",
+            max_length=500,
+        )
+
+        async def on_submit(self, inter: discord.Interaction):
+            guild = inter.guild
+            salon_logs = discord.utils.get(guild.text_channels, name="logs-modération")
+            if not salon_logs:
+                for ch in guild.text_channels:
+                    if "logs" in ch.name.lower():
+                        salon_logs = ch
+                        break
+            if salon_logs:
+                embed = discord.Embed(
+                    title="🐛 Bug signalé",
+                    description=self.description_bug.value,
+                    color=0xE74C3C
+                )
+                embed.set_footer(text=f"Par {inter.user.display_name} — {discord.utils.utcnow().strftime('%d/%m/%Y à %H:%M')}")
+                await salon_logs.send(embed=embed)
+            await inter.response.send_message(
+                "🐛 Bug signalé ! L'équipe va s'en occuper, merci 🙏",
+                ephemeral=True
+            )
+
+    await interaction.response.send_modal(BugModal())
+
+
+# --------------------------------------------------------------------------
+# COMPTEUR DE MEMBRES AUTOMATIQUE
+# --------------------------------------------------------------------------
+
+@tasks.loop(minutes=10)
+async def mettre_a_jour_compteur():
+    """Met à jour le compteur de membres dans un salon vocal toutes les 10 minutes."""
+    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+    if not guild:
+        return
+    for channel in guild.voice_channels:
+        if "membres" in channel.name.lower() or "💑" in channel.name:
+            try:
+                await channel.edit(name=f"💑 {guild.member_count} membres")
+            except Exception as e:
+                print(f"Erreur compteur membres : {e}")
+            break
+
+
+@mettre_a_jour_compteur.before_loop
+async def before_mettre_a_jour_compteur():
+    await bot.wait_until_ready()
+
+
+# --------------------------------------------------------------------------
+# RAPPEL DE BUMP DISBOARD
+# --------------------------------------------------------------------------
+
+@tasks.loop(hours=2)
+async def rappel_bump():
+    """Rappelle de bumper sur Disboard toutes les 2 heures."""
+    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+    if not guild:
+        return
+    salon = discord.utils.get(guild.text_channels, name="logs-modération")
+    if not salon:
+        for ch in guild.text_channels:
+            if "logs" in ch.name.lower():
+                salon = ch
+                break
+    if salon:
+        await salon.send(
+            f"<@364449220461199370> ⏰ C'est l'heure de bumper sur Disboard ! "
+            f"Tape `/bump` dans n'importe quel salon pour remonter dans les résultats 🚀"
+        )
+
+
+@rappel_bump.before_loop
+async def before_rappel_bump():
+    await bot.wait_until_ready()
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
@@ -2110,6 +2338,10 @@ async def on_ready():
         messages_ambiance.start()
     if not verifier_premium_whop.is_running():
         verifier_premium_whop.start()
+    if not mettre_a_jour_compteur.is_running():
+        mettre_a_jour_compteur.start()
+    if not rappel_bump.is_running():
+        rappel_bump.start()
 
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
