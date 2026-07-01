@@ -1567,6 +1567,93 @@ async def bannir_profil(interaction: discord.Interaction, membre: discord.Member
         ephemeral=True
     )
 
+
+# --------------------------------------------------------------------------
+# VÉRIFICATION PREMIUM VIA API WHOP
+# --------------------------------------------------------------------------
+
+WHOP_API_KEY = os.environ.get("WHOP_API_KEY")
+WHOP_PRODUCT_ID = "matchmind-premium"
+
+
+async def get_whop_members():
+    """Récupère la liste des membres avec un abonnement actif sur Whop."""
+    import aiohttp
+    if not WHOP_API_KEY:
+        return []
+    
+    headers = {
+        "Authorization": f"Bearer {WHOP_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(
+            f"https://api.whop.com/api/v2/memberships?product_id={WHOP_PRODUCT_ID}&status=active&per=100",
+            headers=headers
+        ) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                return data.get("data", [])
+            else:
+                print(f"Erreur API Whop : {resp.status}")
+                return []
+
+
+@tasks.loop(minutes=30)
+async def verifier_premium_whop():
+    """Vérifie toutes les 30 minutes les abonnements Whop actifs."""
+    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+    if not guild:
+        return
+
+    role_premium = discord.utils.get(guild.roles, name=ROLE_PREMIUM)
+    if not role_premium:
+        return
+
+    try:
+        membres_actifs = await get_whop_members()
+        discord_ids_actifs = set()
+
+        for membre in membres_actifs:
+            discord_id = membre.get("discord", {}).get("id")
+            if discord_id:
+                discord_ids_actifs.add(int(discord_id))
+
+        for member in guild.members:
+            a_role_premium = role_premium in member.roles
+            a_abonnement_actif = member.id in discord_ids_actifs
+
+            if a_abonnement_actif and not a_role_premium:
+                await member.add_roles(role_premium)
+                try:
+                    await member.send(
+                        "💎 Ton abonnement MatchMind Premium a été activé ! "
+                        "Bienvenue dans l'espace exclusif 🌟"
+                    )
+                except discord.Forbidden:
+                    pass
+                print(f"Rôle Premium ajouté à {member.name}")
+
+            elif not a_abonnement_actif and a_role_premium:
+                await member.remove_roles(role_premium)
+                try:
+                    await member.send(
+                        "Ton abonnement MatchMind Premium a expiré. "
+                        "Tu peux te réabonner à tout moment sur whop.com/matchmind-8b4e/matchmind-premium/ 💌"
+                    )
+                except discord.Forbidden:
+                    pass
+                print(f"Rôle Premium retiré à {member.name}")
+
+    except Exception as e:
+        print(f"Erreur vérification Whop : {e}")
+
+
+@verifier_premium_whop.before_loop
+async def before_verifier_premium_whop():
+    await bot.wait_until_ready()
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
@@ -1603,6 +1690,8 @@ async def on_ready():
         envoyer_jeu.start()
     if not messages_ambiance.is_running():
         messages_ambiance.start()
+    if not verifier_premium_whop.is_running():
+        verifier_premium_whop.start()
 
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
