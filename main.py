@@ -791,27 +791,29 @@ async def generer_citation():
             return data["content"][0]["text"].strip()
 
 
-@tasks.loop(hours=8)
+@tasks.loop(minutes=1)
 async def envoyer_citation():
-    """Envoie une citation 3 fois par jour dans le salon dédié."""
-    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
-    if not guild:
-        return
-
-    salon = discord.utils.get(guild.text_channels, name=SALON_CITATIONS)
-    if not salon:
-        return
-
-    try:
-        citation = await generer_citation()
-        embed = discord.Embed(
-            description=f"✨ **Citation du jour**\n\n{citation}",
-            color=0xE91E8C
-        )
-        embed.set_footer(text="MatchMind — Trouve quelqu'un qui te ressemble vraiment 💘")
-        await salon.send(embed=embed)
-    except Exception as e:
-        print(f"Erreur génération citation : {e}")
+    """Envoie une citation à 8h, 13h et 19h (heure de Paris)."""
+    from datetime import datetime, timezone, timedelta
+    paris = timezone(timedelta(hours=2))
+    now = datetime.now(paris)
+    if now.hour in (8, 13, 19) and now.minute == 0:
+        guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+        if not guild:
+            return
+        salon = discord.utils.get(guild.text_channels, name=SALON_CITATIONS)
+        if not salon:
+            return
+        try:
+            citation = await generer_citation()
+            embed = discord.Embed(
+                description=f"✨ **Citation du jour**\n\n{citation}",
+                color=0xE91E8C
+            )
+            embed.set_footer(text="MatchMind — Trouve quelqu'un qui te ressemble vraiment 💘")
+            await salon.send(embed=embed)
+        except Exception as e:
+            print(f"Erreur génération citation : {e}")
 
 
 @envoyer_citation.before_loop
@@ -881,28 +883,30 @@ async def generer_question():
             return data["content"][0]["text"].strip()
 
 
-@tasks.loop(hours=24)
+@tasks.loop(minutes=1)
 async def envoyer_question():
-    """Envoie une question du jour une fois par jour."""
-    guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
-    if not guild:
-        return
-
-    salon = discord.utils.get(guild.text_channels, name=SALON_QUESTIONS)
-    if not salon:
-        return
-
-    try:
-        question = await generer_question()
-        embed = discord.Embed(
-            title="❓ Question du jour",
-            description=question,
-            color=0x3498DB
-        )
-        embed.set_footer(text="Réponds dans #💬discussions et partage ton avis ! 💬")
-        await salon.send(embed=embed)
-    except Exception as e:
-        print(f"Erreur génération question : {e}")
+    """Envoie une question du jour à 10h (heure de Paris)."""
+    from datetime import datetime, timezone, timedelta
+    paris = timezone(timedelta(hours=2))
+    now = datetime.now(paris)
+    if now.hour == 10 and now.minute == 0:
+        guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+        if not guild:
+            return
+        salon = discord.utils.get(guild.text_channels, name=SALON_QUESTIONS)
+        if not salon:
+            return
+        try:
+            question = await generer_question()
+            embed = discord.Embed(
+                title="❓ Question du jour",
+                description=question,
+                color=0x3498DB
+            )
+            embed.set_footer(text="Réponds dans #💬discussions et partage ton avis ! 💬")
+            await salon.send(embed=embed)
+        except Exception as e:
+            print(f"Erreur génération question : {e}")
 
 
 @envoyer_question.before_loop
