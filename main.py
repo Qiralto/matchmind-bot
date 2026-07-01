@@ -501,7 +501,7 @@ async def on_message(message: discord.Message):
                 await webhook.send(
                     content=message.content or "(message vide)",
                     username="Match anonyme",
-                    files=[await a.to_file() for a in message.attachments] if message.attachments else None,
+                    files=[await a.to_file() for a in message.attachments] if message.attachments else [],
                 )
             except discord.HTTPException:
                 pass
