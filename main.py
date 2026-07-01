@@ -2004,6 +2004,15 @@ async def date_vocale(interaction: discord.Interaction):
         )
         return
 
+    # Vérifier que les pseudos ont été révélés mutuellement
+    if not match["revealed"]:
+        await interaction.response.send_message(
+            "🔒 La date vocale n'est disponible qu'après la révélation mutuelle des pseudos !\n"
+            "Continuez à discuter et révélez-vous quand vous vous sentez prêt(e)s 💘",
+            ephemeral=True
+        )
+        return
+
     # Récupérer les deux membres
     member1 = guild.get_member(match["user1_id"])
     member2 = guild.get_member(match["user2_id"])
