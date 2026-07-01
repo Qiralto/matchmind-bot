@@ -911,6 +911,51 @@ class SuggestionView(ui.View):
 
 
 
+
+async def post_comment_devenir_premium(guild: discord.Guild):
+    """Poste le message explicatif dans #comment-devenir-premium au démarrage."""
+    salon = None
+    for ch in guild.text_channels:
+        if "devenir-premium" in ch.name.lower() or "comment-devenir" in ch.name.lower():
+            salon = ch
+            break
+    if not salon:
+        return
+
+    async for message in salon.history(limit=10):
+        if message.author == guild.me:
+            return
+
+    embed = discord.Embed(
+        title="💎 Comment devenir Premium ?",
+        description=(
+            "Passe à la vitesse supérieure avec **MatchMind Premium** et profite "
+            "d'avantages exclusifs pour maximiser tes chances de trouver la bonne personne ! 💘\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "**✨ Les avantages Premium**\n\n"
+            "🚀 **Plus de suggestions** — Reçois plus de profils compatibles chaque jour\n"
+            "💬 **Lounge exclusif** — Accès à un salon privé réservé aux membres Premium\n"
+            "🎙️ **Vocal VIP** — Un salon vocal exclusif entre membres Premium\n"
+            "💡 **Suggestions prioritaires** — Propose des idées pour améliorer MatchMind\n"
+            "🌟 **Rôle exclusif** — Un badge visible qui te distingue sur le serveur\n"
+            "🔔 **Accès anticipé** — Découvre les nouvelles fonctionnalités en avant-première\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "**💳 Comment s'abonner ?**\n\n"
+            "1️⃣ Clique sur ce lien : **https://whop.com/matchmind-8b4e/matchmind-premium/**\n"
+            "2️⃣ Crée un compte Whop et connecte ton Discord dans **Paramètres → Comptes connectés**\n"
+            "3️⃣ Choisis ton abonnement :\n"
+            "   • **4,99€/mois** — Mensuel\n"
+            "   • **25,99€/6 mois** — Semestriel (économise 4€ 🎉)\n"
+            "4️⃣ Le rôle 💎Premium est attribué automatiquement sur le serveur !\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+            "**❓ Des questions ?**\n"
+            "Contacte un modérateur dans **#💬discussions** 💌"
+        ),
+        color=0x9B59B6
+    )
+    embed.set_footer(text="MatchMind Premium — 4,99€/mois ou 25,99€/6 mois • Résiliation possible à tout moment")
+    await salon.send(embed=embed)
+
 async def post_avantages_premium(guild: discord.Guild):
     """Poste le message des avantages Premium au démarrage."""
     salon = None
@@ -1699,6 +1744,7 @@ async def on_ready():
         await post_temoignage_button(guild)
         await post_suggestion_button(guild)
         await post_avantages_premium(guild)
+        await post_comment_devenir_premium(guild)
 
     print(f"Connecté en tant que {bot.user}")
 
