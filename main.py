@@ -1181,6 +1181,141 @@ async def test_sondage(interaction: discord.Interaction):
     except Exception as e:
         await interaction.followup.send(f"Erreur : {e}", ephemeral=True)
 
+
+# --------------------------------------------------------------------------
+# JEU DU JOUR VIA API CLAUDE
+# --------------------------------------------------------------------------
+
+SALON_JEU = "🎮jeu-du-jour"
+JEU_TYPES = ["devinette", "ce ou cela", "culture générale", "complète la phrase"]
+jeu_index = 0
+
+
+async def generer_jeu(type_jeu: str):
+    """Génère un jeu du jour via Claude."""
+    import aiohttp
+
+    prompts = {
+        "devinette": (
+            "Génère une devinette fun et originale adaptée à une communauté de rencontres. "
+            "Format EXACT:\n"
+            "TITRE: 🤔 Devinette du jour\n"
+            "JEU: [la devinette]\n"
+            "REPONSE: [la réponse]\n"
+            "Garde la réponse courte."
+        ),
+        "ce ou cela": (
+            "Génère un 'ce ou cela' fun avec deux options opposées liées aux rencontres ou à la vie quotidienne. "
+            "Format EXACT:\n"
+            "TITRE: 🎯 Ce ou cela ?\n"
+            "JEU: [option 1] ou [option 2] ?\n"
+            "REPONSE: Dis-nous ton choix en réaction !"
+        ),
+        "culture générale": (
+            "Génère une question de culture générale fun et pas trop difficile. "
+            "Format EXACT:\n"
+            "TITRE: 🧠 Culture générale\n"
+            "JEU: [la question]\n"
+            "REPONSE: [la réponse]"
+        ),
+        "complète la phrase": (
+            "Génère une phrase à compléter fun et légère liée aux rencontres ou à la personnalité. "
+            "Format EXACT:\n"
+            "TITRE: 💭 Complète la phrase\n"
+            "JEU: [phrase avec ... à la fin]\n"
+            "REPONSE: Réponds dans le fil de discussion !"
+        ),
+    }
+
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json"
+    }
+    payload = {
+        "model": "claude-haiku-4-5",
+        "max_tokens": 200,
+        "messages": [{"role": "user", "content": prompts[type_jeu]}]
+    }
+
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=payload
+        ) as resp:
+            data = await resp.json()
+            return data["content"][0]["text"].strip()
+
+
+@tasks.loop(minutes=1)
+async def envoyer_jeu():
+    """Envoie un jeu du jour à 11h (heure de Paris)."""
+    global jeu_index
+    from datetime import datetime, timezone, timedelta
+    paris = timezone(timedelta(hours=2))
+    now = datetime.now(paris)
+    if now.hour == 11 and now.minute == 0:
+        guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
+        if not guild:
+            return
+        salon = discord.utils.get(guild.text_channels, name=SALON_JEU)
+        if not salon:
+            return
+        try:
+            type_jeu = JEU_TYPES[jeu_index % len(JEU_TYPES)]
+            jeu_index += 1
+            raw = await generer_jeu(type_jeu)
+            lines = raw.strip().split("\n")
+            titre = lines[0].replace("TITRE:", "").strip()
+            jeu = lines[1].replace("JEU:", "").strip()
+            reponse = lines[2].replace("REPONSE:", "").strip()
+
+            embed = discord.Embed(
+                title=titre,
+                description=jeu,
+                color=0x2ECC71
+            )
+            embed.set_footer(text=f"Réponse : {reponse}")
+            await salon.send(embed=embed)
+        except Exception as e:
+            print(f"Erreur génération jeu : {e}")
+
+
+@envoyer_jeu.before_loop
+async def before_envoyer_jeu():
+    await bot.wait_until_ready()
+
+
+@bot.tree.command(name="test-jeu", description="[ADMIN] Forcer l'envoi d'un jeu maintenant")
+async def test_jeu(interaction: discord.Interaction):
+    global jeu_index
+    fondateur = discord.utils.get(interaction.guild.roles, name=ROLE_FONDATEUR)
+    if not fondateur or fondateur not in interaction.user.roles:
+        await interaction.response.send_message("Permission refusée.", ephemeral=True)
+        return
+    await interaction.response.send_message("Génération du jeu...", ephemeral=True)
+    guild = interaction.guild
+    salon = discord.utils.get(guild.text_channels, name=SALON_JEU)
+    if not salon:
+        await interaction.followup.send("Salon jeu introuvable.", ephemeral=True)
+        return
+    try:
+        type_jeu = JEU_TYPES[jeu_index % len(JEU_TYPES)]
+        jeu_index += 1
+        raw = await generer_jeu(type_jeu)
+        lines = raw.strip().split("\n")
+        titre = lines[0].replace("TITRE:", "").strip()
+        jeu = lines[1].replace("JEU:", "").strip()
+        reponse = lines[2].replace("REPONSE:", "").strip()
+        embed = discord.Embed(title=titre, description=jeu, color=0x2ECC71)
+        embed.set_footer(text=f"Réponse : {reponse}")
+        await salon.send(embed=embed)
+        await interaction.followup.send("Jeu envoyé !", ephemeral=True)
+    except Exception as e:
+        await interaction.followup.send(f"Erreur : {e}", ephemeral=True)
+
 # --------------------------------------------------------------------------
 # DÉMARRAGE
 # --------------------------------------------------------------------------
@@ -1212,6 +1347,8 @@ async def on_ready():
         envoyer_question.start()
     if not envoyer_sondage.is_running():
         envoyer_sondage.start()
+    if not envoyer_jeu.is_running():
+        envoyer_jeu.start()
 
     guild = bot.get_guild(GUILD_ID) if GUILD_ID else (bot.guilds[0] if bot.guilds else None)
     if guild:
